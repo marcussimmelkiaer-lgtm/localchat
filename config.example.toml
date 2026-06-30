@@ -1,0 +1,22 @@
+# LocalChat configuration. Copy this file to `config.toml` and set model_path.
+
+# Absolute path to a local GGUF chat model (required to generate).
+# Example: model_path = "C:/models/Qwen2.5-3B-Instruct-Q4_K_M.gguf"
+model_path = ""
+
+# Local server. Bound to 127.0.0.1 only. If the port is busy, an ephemeral one
+# is chosen automatically.
+port = 8765
+
+# Generation
+n_ctx = 4096
+use_gpu = true                          # use the GPU (Vulkan) if available; false = CPU only
+allow_thinking = false                  # reasoning models (Qwen3): keep <think> blocks out of chat
+system_prompt = "You are a helpful assistant."
+max_live_chats = 3
+
+[sampler]
+preset = "temperature"                  # temperature | top_k | top_p | greedy | default
+temperature = 0.7
+# top_k = 40
+# top_p = 0.95

@@ -1,0 +1,12 @@
+venv/
+config.toml
+*.db
+*.db-wal
+*.db-shm
+__pycache__/
+*.pyc
+*.gguf
+frontend/node_modules/
+frontend/dist/
+
+# backend/static is the COMMITTED prebuilt SPA — do not ignore it.
