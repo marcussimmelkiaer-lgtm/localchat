@@ -10,9 +10,23 @@ still accurate and worth reading, but the platform specifics differ here.** What
 
 - **Launcher**: `run.sh` (POSIX) replaces `run.bat`. `venv/bin/python` instead of
   `venv\Scripts\python.exe`. `chmod +x run.sh` once, then `./run.sh`.
+- **First-run guards in `run.sh`** (added after two real Mac install failures — see decision #9):
+  before building the venv it (1) requires **Python 3.11+** and (2) on Apple Silicon verifies the
+  venv interpreter is **arm64** (not an Intel/Rosetta `python3`). Both fail fast with an actionable
+  message instead of an opaque pip/`tomllib` error mid-install. The pip-upgrade step is also guarded.
+- **Python 3.11+ is REQUIRED** (not 3.10): `backend/config.py` and `backend/fetch_model.py` import the
+  stdlib **`tomllib`**, which only exists on 3.11+. README + run.sh guard reflect this.
 - **GPU backend**: **Metal**, not Vulkan. The NobodyWho 1.5.0 macOS wheel
   (`cp38-abi3-macosx_11_0_arm64`) is Metal-built; `pip install` resolves it automatically. `use_gpu`
-  / `Model(use_gpu_if_available=True)` are unchanged.
+  / `Model(use_gpu_if_available=True)` are unchanged. **Caveat**: this is the *only* macOS wheel —
+  there is **no x86_64 wheel and no sdist**, so an Intel/Rosetta Python can't install nobodywho at all
+  (hence the arm64 guard above). Apple Silicon = arm64; the wheel is correct for it.
+- **CI** (`.github/workflows/macos-first-run.yml`): runs the real `run.sh` first-run path on a
+  `macos-14` (Apple Silicon) runner — venv + `pip install` of the arm64 wheel + `tomllib` import +
+  headless `/healthz` boot — plus a job asserting `run.sh` rejects Python 3.10. Seeds a **dummy model**
+  (sets `model_path` to a touched file) so `fetch_model` is a no-op and the 2.5 GB download is skipped;
+  it validates install/boot only, NOT real download or generation (the runner has no GPU). Actions
+  pinned to Node-24 majors (`checkout@v5`, `setup-python@v6`); no `upload-artifact` (still Node 20).
 - **Window shell** (`backend/main.py`): now **cross-platform** — it branches on `sys.platform`.
   - macOS uses `_control_loop_native` (calls pywebview's native `minimize()` / `toggle_fullscreen()`
     / `destroy()` directly) + `_initial_geometry_darwin` (sizes to `NSScreen.visibleFrame()`).
@@ -126,8 +140,9 @@ Frontend (`frontend/src/`):
   `<input type="file">`, accepts `.csv/.pdf/.xlsx/.xls/.docx`) + removable file chips; `Message`
   renders attachment chips (filename + `FileIcon`) above the user bubble.
 
-Root: `run.bat`, `config.toml` (gitignored, real config), `config.example.toml`, `requirements.txt`,
-`.gitignore`, `README.md`.
+Root: `run.bat`, `run.sh` (macOS/Linux launcher, with the arm64 + Python-3.11+ first-run guards),
+`config.toml` (gitignored, real config), `config.example.toml`, `requirements.txt`, `.gitignore`,
+`.gitattributes` (pins `run.sh`=LF, `run.bat`=CRLF), `README.md`, `.github/workflows/macos-first-run.yml`.
 
 ## How to run / dev workflow
 
@@ -210,6 +225,35 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    `LOCALCHAT_DEFAULT_MODEL` env var (any `huggingface:` / `https://` GGUF). Never fatal — on a failed
    download the app still launches and the UI shows the model error, so the user can set `model_path`
    by hand. First launch therefore needs internet; later launches are offline.
+9. **macOS first-run guards in `run.sh`** (two real failures a fresh Mac clone hit). The launcher checks
+   prerequisites *before* building the venv and fails fast with guidance instead of an opaque error:
+   (a) **Python 3.11+** — `config.py`/`fetch_model.py` import the stdlib `tomllib` (3.11+ only); a 3.9/3.10
+   Python (e.g. Apple's CLT 3.9) would install deps then crash at launch with `ModuleNotFoundError:
+   tomllib`. (b) **arm64 interpreter on Apple Silicon** — nobodywho ships *only* an arm64 macOS wheel (no
+   x86_64, no sdist), so an Intel/Rosetta `python3` can't resolve it; the guard tells the user to use an
+   arm64 Python or `arch -arm64 ./run.sh`. The pip-upgrade step is guarded too. Verified end-to-end on a
+   real Apple Silicon GitHub Actions runner (`.github/workflows/macos-first-run.yml`), including a
+   negative test that 3.10 is rejected. NOTE: the dummy-model trick means CI does NOT exercise the real
+   `download_model` / config-rewrite path or generation — install + boot only.
+10. **Default system prompt = business/data-analysis assistant** (`config.example.toml`, and the user's
+   local `config.toml`). Replaced the generic "You are a helpful assistant." with a concise (~150-word)
+   prompt that leans into the file-upload feature (CSV/Excel/PDF/Word analysis), hard-codes "never
+   fabricate numbers/facts," asks for step-by-step verified calculations, Markdown tables, and a
+   professional tone — kept short to preserve the `n_ctx=4096` budget for uploaded file text. Stored as a
+   TOML triple-quoted multi-line string (`tomllib` parses it fine). Read at startup, so a relaunch picks
+   it up; history rebuilt per turn means existing chats get the new prompt too.
+
+## Token throughput theory (asked but NOT implemented — for future reference)
+
+Single-user decode is **memory-bandwidth bound at batch 1**, not compute bound: each token streams the
+whole weight set from VRAM once, so `tok/s ≈ bandwidth ÷ model_bytes`. "GPU utilization %" is misleading
+(it's warp residency, not FLOP usage). Levers, none applied this session: smaller/more-quantized model
+(biggest, = changing model); unthrottle the GPU (the laptop 4070 is power-capped ~42/95 W — already maxed
+per the user); flash-attention / KV-cache quant (only help at *long* context, don't move short-chat tok/s,
+and depend on NobodyWho exposing the knobs); **speculative decoding** (a tiny draft model verified in a
+batched pass — the only batch-1 trick that beats the bandwidth wall *without* changing the current model's
+weights, but needs NobodyWho draft-model support, unconfirmed in 1.5.0). Conclusion reached with the user:
+keeping the model + maxed GPU + ruling out speculative decoding ⇒ effectively at the ceiling.
 
 ## pywebview / WebView2 gotchas (HARD-WON — this caused many crashes)
 
