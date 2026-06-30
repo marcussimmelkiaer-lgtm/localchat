@@ -92,13 +92,9 @@ jobs:
         run: |
           if [ -n "${RUN_PID:-}" ]; then kill "$RUN_PID" 2>/dev/null || true; fi
 
-      - name: Upload run log
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: run-log
-          path: run.log
-          if-no-files-found: ignore
+      - name: Dump run log on failure
+        if: failure()
+        run: cat run.log || true
 
   python-version-guard:
     name: run.sh rejects Python < 3.11
