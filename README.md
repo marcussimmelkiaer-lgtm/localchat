@@ -6,8 +6,8 @@ bindings (llama.cpp). Live token streaming, a tokens/second readout, and a
 monochrome, white-dominant interface. Native window (WKWebView on macOS,
 WebView2 on Windows).
 
-**Cross-platform**: the same codebase runs on both Windows and macOS (Apple
-Silicon) — `backend/main.py` selects the platform window path at runtime.
+This is the **macOS (Apple Silicon)** build. The same codebase still runs on
+Windows — `backend/main.py` selects the platform path at runtime.
 
 Everything runs locally — no cloud, no API keys.
 
@@ -21,12 +21,21 @@ Everything runs locally — no cloud, no API keys.
 
 ## Run
 
-- **macOS / Linux**: `chmod +x run.sh` (first time only), then `./run.sh`
-- **Windows**: double-click `run.bat`
+```
+chmod +x run.sh   # first time only
+./run.sh
+```
 
-On first launch it creates a virtual environment, installs dependencies, and
-copies `config.example.toml` to `config.toml`. Set `model_path` in `config.toml`,
-then launch again.
+On first launch it creates a virtual environment, installs dependencies, copies
+`config.example.toml` to `config.toml`, and **downloads the default chat model**
+(Qwen3-4B, ~2.5 GB) into NobodyWho's local cache, wiring `model_path` for you.
+The download happens once and is reused on every later launch. (On Windows,
+double-click `run.bat` from the original folder.)
+
+> First launch needs an internet connection for the model download. To use a
+> different model, set `model_path` in `config.toml` before the first run (the
+> download is skipped when a valid model is already configured), or set the
+> `LOCALCHAT_DEFAULT_MODEL` env var to another `huggingface:` / `https://` GGUF.
 
 ## Configuration (`config.toml`)
 

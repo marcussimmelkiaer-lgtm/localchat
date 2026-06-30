@@ -22,9 +22,13 @@ fi
 
 # --- Config: create from template on first run ---
 if [ ! -f "config.toml" ]; then
-  echo "Creating config.toml from template - edit it and set model_path."
+  echo "Creating config.toml from template..."
   cp config.example.toml config.toml
 fi
+
+# --- Model: download the default model on first run if none is configured ---
+# No-op once a valid model_path is set; sets it automatically after download.
+venv/bin/python -m backend.fetch_model || true
 
 # --- Launch the app (frameless native window) ---
 exec venv/bin/python -m backend.main

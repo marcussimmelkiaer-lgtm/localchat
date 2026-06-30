@@ -25,9 +25,13 @@ if not exist "venv\Scripts\python.exe" (
 
 REM --- Config: create from template on first run ---
 if not exist "config.toml" (
-  echo Creating config.toml from template - edit it and set model_path.
+  echo Creating config.toml from template...
   copy /y config.example.toml config.toml >nul
 )
+
+REM --- Model: download the default model on first run if none is configured ---
+REM No-op once a valid model_path is set; sets it automatically after download.
+"venv\Scripts\python.exe" -m backend.fetch_model
 
 REM --- Launch the app (frameless native window) ---
 "venv\Scripts\python.exe" -m backend.main

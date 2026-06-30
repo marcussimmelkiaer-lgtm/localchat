@@ -2,34 +2,31 @@
 
 Project context for Claude Code. Read this first before working on the app.
 
-## ⚠️ Cross-platform (Windows + macOS) — read this first
+## ⚠️ This is the macOS (Apple Silicon) build
 
-This repo runs on **both Windows and macOS (Apple Silicon)**. **Most of the document below was
-written for the original Windows app and describes its hard-won Windows/WebView2 history — that
-context is still accurate, but on macOS the platform specifics differ as follows:**
+This folder (`localchat-mac`) is a port of the original Windows `localchat`. **Most of the document
+below describes the original Windows app and its hard-won Windows/WebView2 history — that context is
+still accurate and worth reading, but the platform specifics differ here.** What changed for macOS:
 
-- **Launcher**: `run.sh` (POSIX) on macOS/Linux — `chmod +x run.sh` once, then `./run.sh` (uses
-  `venv/bin/python`). `run.bat` on Windows (uses `venv\Scripts\python.exe`). Both call `backend.main`.
-- **GPU backend**: **Metal** on macOS (Vulkan on Windows). The NobodyWho 1.5.0 macOS wheel
-  (`cp38-abi3-macosx_11_0_arm64`) is Metal-built; `pip install` resolves the right wheel per platform.
-  `use_gpu` / `Model(use_gpu_if_available=True)` are unchanged.
-- **Window shell** (`backend/main.py`): branches on `sys.platform`.
+- **Launcher**: `run.sh` (POSIX) replaces `run.bat`. `venv/bin/python` instead of
+  `venv\Scripts\python.exe`. `chmod +x run.sh` once, then `./run.sh`.
+- **GPU backend**: **Metal**, not Vulkan. The NobodyWho 1.5.0 macOS wheel
+  (`cp38-abi3-macosx_11_0_arm64`) is Metal-built; `pip install` resolves it automatically. `use_gpu`
+  / `Model(use_gpu_if_available=True)` are unchanged.
+- **Window shell** (`backend/main.py`): now **cross-platform** — it branches on `sys.platform`.
   - macOS uses `_control_loop_native` (calls pywebview's native `minimize()` / `toggle_fullscreen()`
     / `destroy()` directly) + `_initial_geometry_darwin` (sizes to `NSScreen.visibleFrame()`).
     **The WebView2 SetWindowPos workaround does NOT apply on WKWebView** — those native ops are safe
     on Cocoa, so the macOS path is simpler than the Windows one.
-  - Windows uses `_control_loop_win` / `_initial_geometry_win` (the original SetWindowPos dance). The
-    "pywebview / WebView2 gotchas" section below is **Windows-only**.
+  - Windows still uses `_control_loop_win` / `_initial_geometry_win` (the original SetWindowPos
+    dance). The "pywebview / WebView2 gotchas" section below is **Windows-only**.
 - **pyobjc**: pywebview pulls the Cocoa backend (`pyobjc-*`) automatically on macOS via dependency
   markers — no `requirements.txt` change.
-- **Hardware note**: Apple Silicon has **unified memory** — no hard 8 GB VRAM wall like the Windows
-  dev machine's RTX 4070, so the 8B model is comfortable on a Mac too. Model cache lives under
-  `~/Library/Application Support/nobodywho/...` (macOS) vs `%LOCALAPPDATA%\nobodywho\...` (Windows).
-- **Don't copy `venv/` between machines** — each platform builds its own (different wheels). Clone
-  the repo fresh per machine and let `run.sh`/`run.bat` create the venv.
-- **Open verification item (macOS)**: dragging the frameless window from the custom title bar — if it
-  doesn't drag, add the `pywebview-drag-region` CSS class in `TitleBar.jsx` or set `easy_drag=True`
-  in `create_window`.
+- **Hardware**: Apple Silicon (M5) with **unified memory** — no hard 8 GB VRAM wall, so the 8B model
+  is comfortable too. Model cache lives under `~/Library/Application Support/nobodywho/...`.
+- **Open verification item**: dragging the frameless window from the custom title bar on macOS — if
+  it doesn't drag, add the `pywebview-drag-region` CSS class in `TitleBar.jsx` or set
+  `easy_drag=True` in `create_window`.
 
 ## What this is
 
@@ -102,6 +99,12 @@ Backend (`backend/`):
   `content` and the extraction as attachment metadata. Worker thread runs `engine.stream`; async
   generator drains the queue → SSE frames; persists messages.
 - `routes/conversations.py` — conversation CRUD.
+- `fetch_model.py` — **first-run model bootstrap** (see decision #8). `ensure_model()` is a no-op when
+  `config.toml` already names an existing `.gguf`; otherwise it downloads the default
+  (`Qwen3-4B-Q4_K_M`, ~2.5 GB, overridable via `LOCALCHAT_DEFAULT_MODEL`) via
+  `nobodywho.download_model` into NobodyWho's cache and rewrites `model_path` in `config.toml`. Both
+  launchers call `python -m backend.fetch_model` after dep install, before `backend.main`. Never fatal
+  — on failure the app still starts and the UI surfaces the model error.
 
 Frontend (`frontend/src/`):
 - `App.jsx` — layout shell: `TitleBar` + `Sidebar` + `ChatPane`; owns health/model-ready state.
@@ -198,6 +201,15 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    that passes `ImagePart`s — documented as a future step. Scanned/image-only PDFs yield
    `[no extractable text]` (OCR would be a separate addition). Legacy `.doc` (pre-2007 binary) is
    unsupported (no reliable pure-Python reader).
+8. **First-run model auto-download** (`backend/fetch_model.py`). The model is NOT committed (a 4B GGUF
+   is ~2.5 GB — far over GitHub's 100 MB file / LFS-quota limits), so a fresh clone has no weights.
+   Instead the launcher runs `python -m backend.fetch_model` after installing deps: if `config.toml`
+   already points at an existing `.gguf` it's a no-op; otherwise it downloads the default Qwen3-4B via
+   `nobodywho.download_model` into the NobodyWho cache and writes the resolved path into `config.toml`
+   (regex-replacing the first uncommented `model_path =` line). Override the default with the
+   `LOCALCHAT_DEFAULT_MODEL` env var (any `huggingface:` / `https://` GGUF). Never fatal — on a failed
+   download the app still launches and the UI shows the model error, so the user can set `model_path`
+   by hand. First launch therefore needs internet; later launches are offline.
 
 ## pywebview / WebView2 gotchas (HARD-WON — this caused many crashes)
 
