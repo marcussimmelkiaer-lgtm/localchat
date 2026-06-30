@@ -14,7 +14,7 @@ Everything runs locally — no cloud, no API keys.
 ## Requirements
 
 - macOS 11+ on Apple Silicon (M1–M5). (Also runs on Windows 10/11 x64.)
-- Python 3.10+ (`python3`)
+- Python 3.11+ (`python3`) — required (the app uses the standard-library `tomllib`)
 - GPU acceleration is automatic: **Metal** on macOS, Vulkan on Windows. Falls
   back to CPU.
 - A local GGUF chat model (see Configuration)
