@@ -2,6 +2,35 @@
 
 Project context for Claude Code. Read this first before working on the app.
 
+## ⚠️ Cross-platform (Windows + macOS) — read this first
+
+This repo runs on **both Windows and macOS (Apple Silicon)**. **Most of the document below was
+written for the original Windows app and describes its hard-won Windows/WebView2 history — that
+context is still accurate, but on macOS the platform specifics differ as follows:**
+
+- **Launcher**: `run.sh` (POSIX) on macOS/Linux — `chmod +x run.sh` once, then `./run.sh` (uses
+  `venv/bin/python`). `run.bat` on Windows (uses `venv\Scripts\python.exe`). Both call `backend.main`.
+- **GPU backend**: **Metal** on macOS (Vulkan on Windows). The NobodyWho 1.5.0 macOS wheel
+  (`cp38-abi3-macosx_11_0_arm64`) is Metal-built; `pip install` resolves the right wheel per platform.
+  `use_gpu` / `Model(use_gpu_if_available=True)` are unchanged.
+- **Window shell** (`backend/main.py`): branches on `sys.platform`.
+  - macOS uses `_control_loop_native` (calls pywebview's native `minimize()` / `toggle_fullscreen()`
+    / `destroy()` directly) + `_initial_geometry_darwin` (sizes to `NSScreen.visibleFrame()`).
+    **The WebView2 SetWindowPos workaround does NOT apply on WKWebView** — those native ops are safe
+    on Cocoa, so the macOS path is simpler than the Windows one.
+  - Windows uses `_control_loop_win` / `_initial_geometry_win` (the original SetWindowPos dance). The
+    "pywebview / WebView2 gotchas" section below is **Windows-only**.
+- **pyobjc**: pywebview pulls the Cocoa backend (`pyobjc-*`) automatically on macOS via dependency
+  markers — no `requirements.txt` change.
+- **Hardware note**: Apple Silicon has **unified memory** — no hard 8 GB VRAM wall like the Windows
+  dev machine's RTX 4070, so the 8B model is comfortable on a Mac too. Model cache lives under
+  `~/Library/Application Support/nobodywho/...` (macOS) vs `%LOCALAPPDATA%\nobodywho\...` (Windows).
+- **Don't copy `venv/` between machines** — each platform builds its own (different wheels). Clone
+  the repo fresh per machine and let `run.sh`/`run.bat` create the venv.
+- **Open verification item (macOS)**: dragging the frameless window from the custom title bar — if it
+  doesn't drag, add the `pywebview-drag-region` CSS class in `TitleBar.jsx` or set `easy_drag=True`
+  in `create_window`.
+
 ## What this is
 
 **LocalChat** is a polished, ChatGPT-style **desktop chat app for Windows** that runs a local LLM

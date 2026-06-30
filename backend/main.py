@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import queue
 import socket
+import sys
 import threading
 import time
 import urllib.request
@@ -32,9 +33,9 @@ class _WindowApi:
     """Exposed to the frameless window's custom title bar via pywebview js_api.
 
     Calling window ops (minimize / fullscreen / destroy) directly from a js_api
-    callback crashes this WebView2 build. So the bridge methods only ENQUEUE a
-    command; the actual window calls run in the webview worker thread (see
-    _control_loop), which is the safe context for them."""
+    callback crashes the WebView2 (Windows) build. So the bridge methods only
+    ENQUEUE a command; the actual window calls run in the webview worker thread
+    (see _control_loop_win / _control_loop_native), the safe context for them."""
 
     def __init__(self):
         # Underscore-prefixed so pywebview doesn't try to serialize these (the
@@ -54,7 +55,35 @@ class _WindowApi:
         self._cmds.put("toggle_fullscreen")
 
 
-def _control_loop(api: _WindowApi):
+def _control_loop_native(api: _WindowApi):
+    """macOS / non-Windows control loop.
+
+    On WKWebView (Cocoa) the WebView2 crash that forces the SetWindowPos dance on
+    Windows does NOT apply, so window ops can be called straight through pywebview.
+    Drains the same command queue as the Windows loop and dispatches each command
+    to the native window. No initial bounds snap: the window is created at the
+    working-area size by _initial_geometry_darwin."""
+    while True:
+        cmd = api._cmds.get()
+        if cmd == "__stop__":
+            break
+        w = api._window
+        if w is None:
+            continue
+        try:
+            if cmd == "minimize":
+                w.minimize()
+            elif cmd == "close":
+                w.destroy()
+                break
+            elif cmd == "toggle_fullscreen":
+                w.toggle_fullscreen()
+                api._fullscreen = not api._fullscreen
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _control_loop_win(api: _WindowApi):
     """Runs window operations on the webview worker thread (the safe context).
 
     Fullscreen is done WITHOUT pywebview's toggle_fullscreen(): that mutates
@@ -147,7 +176,22 @@ def _wait_ready(url: str, timeout: float = 20.0) -> bool:
     return False
 
 
-def _initial_geometry():
+def _initial_geometry_darwin():
+    """Primary-screen visible frame on macOS: (x, y, width, height).
+
+    visibleFrame() already excludes the menu bar and Dock, so sizing to it gives
+    the maximized look. x/y are left None (pywebview centers the window): Cocoa's
+    bottom-left origin makes passing explicit top-left coords error-prone."""
+    try:
+        from AppKit import NSScreen  # provided by pyobjc (pulled in by pywebview)
+
+        vf = NSScreen.mainScreen().visibleFrame()
+        return (None, None, int(vf.size.width), int(vf.size.height))
+    except Exception:  # noqa: BLE001
+        return (None, None, 1100, 760)
+
+
+def _initial_geometry_win():
     """Primary-monitor working area in logical pixels: (x, y, width, height).
 
     Used only for the window's initial size/position so it opens already filling
@@ -204,11 +248,23 @@ def main():
 
     import webview
 
+    # Pick the platform-specific window helpers. macOS/WKWebView can use
+    # pywebview's native window ops directly; Windows/WebView2 needs the
+    # SetWindowPos dance (see _control_loop_win). Other platforms fall back to the
+    # native path with a centered default size.
+    if sys.platform == "darwin":
+        geometry_fn, control_loop = _initial_geometry_darwin, _control_loop_native
+    elif os.name == "nt":
+        geometry_fn, control_loop = _initial_geometry_win, _control_loop_win
+    else:
+        geometry_fn = lambda: (None, None, 1100, 760)  # noqa: E731
+        control_loop = _control_loop_native
+
     # Initial geometry ≈ primary monitor working area, so the frameless window
-    # comes up covering the screen (the control loop then snaps it pixel-exact).
-    # The window is created in the Normal WindowState (NOT maximized) so its
-    # bounds can be swapped for the fullscreen toggle — see _control_loop.
-    gx, gy, gw, gh = _initial_geometry()
+    # comes up covering the screen (on Windows the control loop then snaps it
+    # pixel-exact). The window is created in the Normal WindowState (NOT
+    # maximized) so its bounds can be swapped for the fullscreen toggle.
+    gx, gy, gw, gh = geometry_fn()
 
     api = _WindowApi()
     window = webview.create_window(
@@ -226,7 +282,7 @@ def main():
     api._window = window
     # Run the control loop on the webview worker thread (window ops are only
     # safe there). start() blocks until the window closes.
-    webview.start(_control_loop, api)
+    webview.start(control_loop, api)
 
     # Window closed — unblock the control loop (if still waiting) and shut down.
     api._cmds.put("__stop__")

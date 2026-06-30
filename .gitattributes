@@ -1,0 +1,7 @@
+# Normalize text files; keep launcher scripts in their platform-correct EOL so
+# they work after a clone regardless of the cloner's core.autocrlf setting.
+* text=auto
+
+*.sh   text eol=lf
+run.sh text eol=lf
+*.bat  text eol=crlf
