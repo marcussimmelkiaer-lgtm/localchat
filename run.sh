@@ -3,30 +3,41 @@
 set -e
 cd "$(dirname "$0")"
 
+# Find a Python 3.11+ interpreter. config.py / fetch_model.py import the stdlib
+# `tomllib` (added in 3.11); without a new-enough Python the app installs deps
+# fine then crashes at launch with an opaque "No module named 'tomllib'".
+# macOS ships /usr/bin/python3 = 3.9 (Apple's), and Homebrew installs VERSIONED
+# names like python3.12 without always creating an unversioned `python3` ahead of
+# Apple's on PATH — so probe specific versions first, then fall back to python3.
+find_python() {
+  local c
+  for c in python3.14 python3.13 python3.12 python3.11 python3 python; do
+    if command -v "$c" >/dev/null 2>&1 \
+       && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' >/dev/null 2>&1; then
+      command -v "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # --- First-time setup: virtual environment + dependencies ---
 if [ ! -x "venv/bin/python" ]; then
   echo "First-time setup: creating virtual environment..."
 
-  # Require Python 3.11+: config.py and fetch_model.py import the stdlib
-  # `tomllib`, which only exists on 3.11+. Without this guard a 3.9/3.10 Python
-  # installs deps fine, then the app crashes at launch with an opaque
-  # "ModuleNotFoundError: No module named 'tomllib'". Fail fast instead.
-  if ! command -v python3 >/dev/null 2>&1; then
+  PYTHON="$(find_python || true)"
+  if [ -z "$PYTHON" ]; then
     echo
-    echo "python3 was not found. Install Python 3.11+ (e.g. 'brew install python@3.12')."
+    echo "LocalChat needs Python 3.11+ (the app uses the standard-library 'tomllib',"
+    echo "added in 3.11). None was found on your PATH — macOS's built-in python3 is 3.9."
+    echo "Install a newer Python (e.g. 'brew install python@3.12') and re-run."
     exit 1
   fi
-  if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)'; then
-    echo
-    echo "LocalChat needs Python 3.11+ (found $(python3 -V 2>&1)). The app uses the"
-    echo "standard-library 'tomllib', which was added in 3.11. Install a newer Python"
-    echo "(e.g. 'brew install python@3.12') and re-run."
-    exit 1
-  fi
+  echo "Using $("$PYTHON" -V 2>&1) at $PYTHON"
 
-  if ! python3 -m venv venv; then
+  if ! "$PYTHON" -m venv venv; then
     echo
-    echo "Failed to create the virtual environment. Is Python 3.11+ installed?"
+    echo "Failed to create the virtual environment with $PYTHON."
     exit 1
   fi
   # On Apple Silicon, nobodywho only ships an arm64 wheel (no x86_64 wheel, no

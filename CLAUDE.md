@@ -11,9 +11,13 @@ still accurate and worth reading, but the platform specifics differ here.** What
 - **Launcher**: `run.sh` (POSIX) replaces `run.bat`. `venv/bin/python` instead of
   `venv\Scripts\python.exe`. `chmod +x run.sh` once, then `./run.sh`.
 - **First-run guards in `run.sh`** (added after two real Mac install failures — see decision #9):
-  before building the venv it (1) requires **Python 3.11+** and (2) on Apple Silicon verifies the
-  venv interpreter is **arm64** (not an Intel/Rosetta `python3`). Both fail fast with an actionable
-  message instead of an opaque pip/`tomllib` error mid-install. The pip-upgrade step is also guarded.
+  before building the venv it (1) **auto-detects a Python 3.11+ interpreter** and (2) on Apple Silicon
+  verifies the venv interpreter is **arm64** (not an Intel/Rosetta `python3`). Both fail fast with an
+  actionable message instead of an opaque pip/`tomllib` error mid-install. The pip-upgrade step is also
+  guarded. **Interpreter detection** (`find_python`): probes `python3.14/3.13/3.12/3.11` **before** plain
+  `python3`, because macOS pins `python3` to Apple's 3.9 and Homebrew installs *versioned* names
+  (`python3.12`) without always shadowing Apple's on PATH — so a fresh clone works even when `python3`
+  alone is 3.9. Falls back to `python3`/`python` if they're ≥3.11.
 - **Python 3.11+ is REQUIRED** (not 3.10): `backend/config.py` and `backend/fetch_model.py` import the
   stdlib **`tomllib`**, which only exists on 3.11+. README + run.sh guard reflect this.
 - **GPU backend**: **Metal**, not Vulkan. The NobodyWho 1.5.0 macOS wheel
@@ -229,7 +233,10 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    prerequisites *before* building the venv and fails fast with guidance instead of an opaque error:
    (a) **Python 3.11+** — `config.py`/`fetch_model.py` import the stdlib `tomllib` (3.11+ only); a 3.9/3.10
    Python (e.g. Apple's CLT 3.9) would install deps then crash at launch with `ModuleNotFoundError:
-   tomllib`. (b) **arm64 interpreter on Apple Silicon** — nobodywho ships *only* an arm64 macOS wheel (no
+   tomllib`. **`find_python` auto-detects the interpreter** — it probes `python3.14/3.13/3.12/3.11` before
+   plain `python3`, so a fresh clone builds the venv with a real 3.11+ even though macOS pins `python3` to
+   Apple's 3.9 and Homebrew only installs versioned `python3.12`-style names (this fixed a real fresh-Mac
+   failure where the hardcoded `python3` resolved to 3.9.6). (b) **arm64 interpreter on Apple Silicon** — nobodywho ships *only* an arm64 macOS wheel (no
    x86_64, no sdist), so an Intel/Rosetta `python3` can't resolve it; the guard tells the user to use an
    arm64 Python or `arch -arm64 ./run.sh`. The pip-upgrade step is guarded too. Verified end-to-end on a
    real Apple Silicon GitHub Actions runner (`.github/workflows/macos-first-run.yml`), including a
