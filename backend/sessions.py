@@ -59,3 +59,12 @@ class SessionRegistry:
     def evict(self, conv_id: str):
         with self._lock:
             self._chats.pop(conv_id, None)
+
+    def clear(self):
+        """Drop every cached Chat (used when the underlying Model is swapped).
+
+        Safe to call mid-generation: a running stream holds its Chat in a local
+        variable, so dropping the registry entry never interrupts it. New turns
+        rebuild their Chat against whatever Model the engine now holds."""
+        with self._lock:
+            self._chats.clear()

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
+import re
+
+from .config import ROOT
 
 # Attachment text extraction. Incoming attachments arrive as
 # {name, mime, data_b64} in the chat POST body; we decode them, pull out plain
@@ -16,6 +19,13 @@ import io
 MAX_FILE_BYTES = 15 * 1024 * 1024  # reject a single file larger than this
 MAX_CHARS_PER_FILE = 8000          # cap extracted text per file (n_ctx budget)
 TRUNC_MARKER = "\n\n[…truncated]"
+
+# Uploaded images are saved (downscaled) here so the vision model can read them
+# by path and the UI can re-serve thumbnails after a reload. Raw bytes of other
+# file types are still never stored — only their extracted text.
+UPLOADS_DIR = ROOT / "uploads"
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
+MAX_IMAGE_DIM = 1024  # longest side; screenshots downscale to keep token cost sane
 
 
 def _b64_to_bytes(data_b64: str) -> bytes:
@@ -52,6 +62,10 @@ def _is_docx(name: str, mime: str) -> bool:
         mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         or name.lower().endswith(".docx")
     )
+
+
+def _is_image(name: str, mime: str) -> bool:
+    return mime.startswith("image/") or name.lower().endswith(IMAGE_EXTS)
 
 
 def _join_sheet(title: str, rows: list[str]) -> str:
@@ -185,6 +199,11 @@ def extract_attachment(att: dict) -> dict:
         return {"name": name, "mime": mime, "size": 0, "text": "[could not decode file]"}
 
     size = len(raw)
+    if _is_image(name, mime):
+        # Images carry no extracted text — the vision model reads the pixels via
+        # an Image part. The bytes are saved to disk separately (save_image, from
+        # the route, which knows the message id); here we just tag it.
+        return {"name": name, "mime": mime or "image/*", "size": size, "text": "", "is_image": True}
     if size == 0:
         text = "[empty file]"
     elif size > MAX_FILE_BYTES:
@@ -207,17 +226,65 @@ def extract_attachment(att: dict) -> dict:
     return {"name": name, "mime": mime, "size": size, "text": text}
 
 
+def _safe_name(s: str) -> str:
+    """Keep only filename-safe characters (ids are generated, but be defensive)."""
+    return re.sub(r"[^A-Za-z0-9._-]", "_", s or "x")
+
+
+def save_image(data_b64: str, conv_id: str, msg_id: str, idx: int) -> str:
+    """Decode, downscale and store one uploaded image; return its on-disk path.
+
+    Re-encodes to JPEG at a bounded size (flattening any transparency onto
+    white) so a large screenshot doesn't blow the context budget and the same
+    file doubles as the reload thumbnail. Raises on undecodable input."""
+    from PIL import Image as PILImage
+
+    raw = _b64_to_bytes(data_b64 or "")
+    img = PILImage.open(io.BytesIO(raw))
+    if img.mode in ("RGBA", "LA", "P"):
+        img = img.convert("RGBA")
+        bg = PILImage.new("RGB", img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[-1])
+        img = bg
+    else:
+        img = img.convert("RGB")
+    w, h = img.size
+    scale = min(1.0, MAX_IMAGE_DIM / max(w, h)) if max(w, h) else 1.0
+    if scale < 1.0:
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))))
+
+    dest_dir = UPLOADS_DIR / _safe_name(conv_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{_safe_name(msg_id)}_{idx}.jpg"
+    img.save(dest, format="JPEG", quality=88)
+    return str(dest)
+
+
+def cleanup_conversation_images(conv_id: str) -> None:
+    """Remove a conversation's stored images (called when it is deleted)."""
+    import shutil
+
+    d = UPLOADS_DIR / _safe_name(conv_id)
+    if d.exists():
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def fold_content(content: str, attachments: list[dict] | None) -> str:
     """Build the text the model sees: each attachment's extracted text as a
-    labelled fenced block, then the user's typed message."""
+    labelled fenced block (images become a short `[Image: name]` placeholder),
+    then the user's typed message."""
     if not attachments:
         return content
     blocks = []
     for a in attachments:
-        text = (a or {}).get("text") or ""
+        a = a or {}
+        if a.get("is_image"):
+            blocks.append(f"[Image: {a.get('name') or 'image'}]")
+            continue
+        text = a.get("text") or ""
         if not text:
             continue
-        name = (a or {}).get("name") or "file"
+        name = a.get("name") or "file"
         blocks.append(f"[Attached file: {name}]\n```\n{text}\n```")
     if not blocks:
         return content

@@ -1,4 +1,5 @@
 import ConversationItem from './ConversationItem'
+import ModelManagerButton from './ModelManagerButton'
 import { PlusIcon, SidebarIcon } from './icons'
 import logoUrl from '../assets/logo-nobodywho.png'
 
@@ -10,6 +11,9 @@ export default function Sidebar({
   onRename,
   onDelete,
   onCollapse,
+  activeModel,
+  modelBusy,
+  onOpenModels,
 }) {
   return (
     <div className="flex h-full w-[260px] shrink-0 flex-col border-r border-line bg-ground-2">
@@ -49,6 +53,9 @@ export default function Sidebar({
             ))}
           </div>
         )}
+      </div>
+      <div className="border-t border-line p-2">
+        <ModelManagerButton active={activeModel} busy={modelBusy} onOpen={onOpenModels} />
       </div>
     </div>
   )

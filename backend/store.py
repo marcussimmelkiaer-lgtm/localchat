@@ -145,6 +145,12 @@ def get_messages(conv_id: str) -> list[dict]:
         return [_row_to_msg(r) for r in rows]
 
 
+def get_message(msg_id: str) -> dict | None:
+    with _conn() as c:
+        r = c.execute("SELECT * FROM messages WHERE id=?", (msg_id,)).fetchone()
+        return _row_to_msg(r) if r else None
+
+
 def rename_conversation(conv_id: str, title: str) -> None:
     with _conn() as c:
         c.execute(

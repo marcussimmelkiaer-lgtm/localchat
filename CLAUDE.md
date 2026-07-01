@@ -210,10 +210,10 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    `prompt_from_store` folds it in front of the typed message, so **the model path is unchanged** —
    `chat.ask(prompt)` just receives a longer string. Key UX choice: the chat bubble stores/shows **only
    the typed text** (with a filename chip); the (potentially huge) extracted text lives in attachment
-   metadata and never renders. Per-file cap 8000 chars (`MAX_CHARS_PER_FILE`) vs `n_ctx=4096` — large
-   files are truncated with a marker. **Images are deliberately NOT supported**: Qwen3-8B is text-only;
-   true vision would need a vision GGUF + `projection_model_path` (mmproj) and a reworked engine path
-   that passes `ImagePart`s — documented as a future step. Scanned/image-only PDFs yield
+   metadata and never renders. Per-file cap 8000 chars (`MAX_CHARS_PER_FILE`) vs `n_ctx=16384` — large
+   files are truncated with a marker. **Images ARE now supported** (see decision #12): an uploaded image
+   auto-switches to a vision GGUF (Qwen2.5-VL-3B + mmproj) for that turn via a `Prompt([Text, Image])`, then
+   switches back — text files still take the fold-into-prompt path unchanged. Scanned/image-only PDFs yield
    `[no extractable text]` (OCR would be a separate addition). Legacy `.doc` (pre-2007 binary) is
    unsupported (no reliable pure-Python reader).
 8. **First-run model auto-download** (`backend/fetch_model.py`). The model is NOT committed (a 4B GGUF
@@ -239,9 +239,76 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    local `config.toml`). Replaced the generic "You are a helpful assistant." with a concise (~150-word)
    prompt that leans into the file-upload feature (CSV/Excel/PDF/Word analysis), hard-codes "never
    fabricate numbers/facts," asks for step-by-step verified calculations, Markdown tables, and a
-   professional tone — kept short to preserve the `n_ctx=4096` budget for uploaded file text. Stored as a
+   professional tone — kept short to preserve the `n_ctx` budget for uploaded file text. Stored as a
    TOML triple-quoted multi-line string (`tomllib` parses it fine). Read at startup, so a relaunch picks
    it up; history rebuilt per turn means existing chats get the new prompt too.
+11. **In-app model download & switching** (built — was decision-#2's deferred "Known issue"). A runtime
+   model manager: curated Qwen3 catalog (1.7B/4B/8B Q4_K_M) **+** a custom `huggingface:` spec field, with
+   download progress, runtime switch, and delete-to-reclaim-disk. **Reuses the existing load lifecycle in
+   reverse**: a swap clears `engine._loaded` + the `SessionRegistry`, nulls `_model`, sets the new
+   `cfg.model_path`, and re-runs `_ensure_model()` under `_model_lock` — so the existing `/healthz`
+   `model_loaded` gate auto-disables the composer ("Preparing model…") during the reload, no UI special-
+   casing. Engine gains `current_model()`, a polled task-state (`idle|downloading|loading|ready|error` via
+   `task_status()`), `start_switch()`, `start_download()` (both daemon-threaded); `SessionRegistry.clear()`
+   is safe mid-generation (a running `stream()` holds its `Chat` in a local). New `backend/models_catalog.py`
+   (matches catalog specs against `nobodywho.get_cached_models()` `(path, size)` tuples by path-tail; this is
+   also the authoritative delete guard — only files NobodyWho reports as cached can be deleted) and
+   `backend/routes/models.py` (`GET /api/models`, `GET /api/models/status`, `POST .../download`,
+   `POST .../switch`, `DELETE /api/models`). The choice is persisted by reusing `fetch_model._write_model_path`.
+   **Switching is blocked while generating**: `routes/models.py` checks `app.state.stops` (registered
+   synchronously when a `/chat/stream` starts → no startup race; the engine's `_active` check is defense-in-
+   depth) and returns 409 → "Stop generation before switching models." Frontend: `api/models.js`,
+   `hooks/useModelManager.js` (status polling + actions), `components/ModelPicker.jsx` (modal) +
+   `ModelManagerButton.jsx` (sidebar footer), wired in `App.jsx`/`Sidebar.jsx`. **Cross-platform by
+   construction**: never hardcodes the cache dir (Win `%LOCALAPPDATA%\nobodywho` vs mac
+   `~/Library/Application Support/nobodywho`) — paths come from `get_cached_models()`/`download_model`;
+   comparisons use `os.path.samefile`/normalised tails so Windows case/slash diffs don't false-mismatch;
+   `_write_model_path` emits forward slashes (valid TOML on both). Verified headless on Windows: list,
+   switch 4B↔8B (+ config rewrite + generation on the swapped model), all guards (delete-active 409,
+   delete-bogus 400, switch-missing 409, switch-while-streaming 409 incl. the frame-0 instant). The real
+   ~1 GB download path (same `download_model` as `fetch_model.py`) is left to manual one-time verification.
+12. **Vision (image) uploads via a borrowed vision model** (built — was decision-#7's deferred "future step").
+   A user can attach a screenshot/image and ask about it. **NobodyWho 1.5.0 already exposes the API** (verified in
+   `venv/.../nobodywho/__init__.pyi`): `Model(model_path, projection_model_path=<mmproj>)`, and `chat.ask(prompt)`
+   accepts a `Prompt([Text(...), Image(path)])` (`Image` takes a **file path only** — no base64/bytes). Because 8 GB
+   VRAM holds one model at a time, an **image turn auto-switches** to a small vision model (**Qwen2.5-VL-3B** + its
+   `mmproj-...-f16.gguf`, from `ggml-org/Qwen2.5-VL-3B-Instruct-GGUF`), generates, then **switches back** to the
+   persisted text model (`llm._start_restore_default`, on a daemon thread so the ~3 s reload hides behind the answer
+   and the existing `/healthz model_loaded` gate disables the composer meanwhile). The swap is **in-memory only — it
+   deliberately does NOT rewrite `config.toml`** (unlike the manual switch), so the text model stays the default;
+   `engine._default_model_path/_default_projection` track what to restore to (updated only by persisted switches).
+   Key pieces: catalog entry gains `projection` + `vision: True` (two-file `downloaded`/resolve via
+   `models_catalog.resolve_cached_paths` / `projection_for_path`); `Config.projection_model_path`
+   (+`LOCALCHAT_PROJECTION_PATH`); `_ensure_model` passes it to `Model(...)`; `prompt_from_store` now returns
+   `(prefix, prompt, image_paths)` (only the **current** turn can carry images — history is text-only via
+   `set_chat_history`, so prior images survive as the `[Image: name]` placeholder `fold_content` emits); `stream()`
+   calls `_ensure_vision_loaded()` then `_build_prompt`. **Image bytes ARE stored on disk** (departure from #7's "raw
+   bytes never stored"): `files.save_image` downscales to ≤1024px and re-encodes to JPEG (Pillow) under
+   `uploads/<conv>/<msg>_<idx>.jpg` — needed because `Image()` wants a path, for regenerate, and for reload
+   thumbnails; deleted on conversation delete (`files.cleanup_conversation_images`). New `routes/attachments.py`
+   (`GET /api/attachments/{message_id}/{idx}`, FileResponse, guarded to a message's own image attachments) re-serves
+   thumbnails after reload; the live bubble uses a local object-URL preview. **Download-on-first-use**: if the vision
+   model isn't cached when an image arrives, `_ensure_vision_loaded` kicks off the two-file download
+   (`start_download(..., then_switch=False, extra_specs=[mmproj])`) and returns a "Downloading… resend when ready"
+   message as the turn's error; it's also pre-downloadable from the ModelPicker (a vision row downloads both files, no
+   switch). Frontend: `Composer` accepts images + shows chip thumbnails; `useChatStream` keeps a `previewUrl`;
+   `Message`/`AttachmentChips` render `<img>` (previewUrl live, endpoint on reload); `AttachmentMeta` gained
+   `is_image` (still strips `path`/`text`). Added `Pillow` to `requirements.txt`. **Verified headless on Windows** (no
+   GPU/download): catalog two-file wiring, `save_image` downscale+JPEG, image tagging, `[Image:]` fold placeholder,
+   `_build_prompt` (Prompt vs str), `_same_path`/borrow logic, `_ensure_vision_loaded` download-wiring (mmproj as
+   extra_spec, `then_switch=False`), `prompt_from_store` 3-tuple + image_paths, the attachments endpoint + 404 guards,
+   `MessageOut` stripping, and cleanup. The real ~3.3 GB download + live GPU vision generation + swap-back is left to
+   **manual one-time verification** (CI has no GPU; consistent with #8/#11). Follow-ups: multimodal history (needs
+   NobodyWho image-history support), OCR for scanned PDFs, surfacing vision-download progress during a chat (currently
+   only visible in the Models modal).
+13. **`n_ctx` raised 4096 → 16384** (`config.toml` + `config.example.toml`). 4096 was an over-conservative
+   default, not a hardware/model limit — Qwen3/Qwen2.5-VL are trained for 32768 tokens. The real constraint is
+   VRAM: llama.cpp allocates the **full `n_ctx` KV-cache upfront** at load, so it trades VRAM for headroom
+   (system prompt + history + folded file text + image tokens + reply). On the 8 GB 4070, 16384 (~2.4 GB KV
+   with a 3–4B model, total ~5.7 GB) is the sweet spot with ~2 GB spare; **32768 (~4.7 GB KV) risks OOM on a
+   4B** — drop to 8192 if a bigger model fails to load. Read at startup + history rebuilt per turn, so a relaunch
+   applies it to existing chats too. (NB: the local `config.toml` currently points `model_path` at a small
+   `Mythos-nano.Q4_K_M` model, which leaves even more room than the Qwen3-4B the docs above assume.)
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
@@ -287,19 +354,22 @@ keeping the model + maxed GPU + ruling out speculative decoding ⇒ effectively 
   Already maxed at that clock (94% GPU / 91% mem util). To go faster: set the laptop vendor app to
   Performance mode, NVIDIA Control Panel → "Prefer maximum performance", Windows "Best performance".
   `nvidia-smi -pl` is blocked on laptop GPUs. (Switching 8B→4B already bought ~1.5× — ~50 vs ~33 tok/s.)
-- **In-app model switching/downloading** (researched, not built): a runtime model picker + HF download
-  manager is ~1–2 days and reuses the warmup lock/poll/disabled-composer infra. Free path today is just
-  editing `model_path` in `config.toml` (both 4B and 8B are cached). See the session log / decision #2.
+- **In-app model switching/downloading** — **DONE** (see decision #11): runtime model picker (curated
+  Qwen3 catalog + custom `huggingface:` spec), download with progress, switch, and delete, via
+  `backend/routes/models.py` + the sidebar `ModelPicker`. Editing `model_path` in `config.toml` by hand
+  still works as a fallback. Possible follow-ups: more catalog entries / non-Qwen families (caveat: a
+  different chat template/sampler may need tuning), and surfacing the live download progress in CI.
 - **No LaTeX rendering**: Qwen3 sometimes emits `$...$` / `$$...$$`; the markdown renderer shows it raw.
   Could add `remark-math` + KaTeX.
 - **Fullscreen** works (title-bar button + Esc, via `SetWindowPos` bounds swap — see gotchas/decision #3).
   There's still no free-floating *resize* toggle (the window stays at working-area or full-screen bounds).
 - **History fidelity**: each turn rebuilds the Chat's history from SQLite via `set_chat_history`
   (`prompt_from_store`), so no KV-cache reuse across turns. Fine for short chats; could optimize later.
-- **Image/vision uploads** (next step for file uploads, decision #7): needs a vision-capable GGUF +
-  `projection_model_path` (mmproj) and an engine path using NobodyWho's `Prompt`/`ImagePart` API —
-  likely a small VL model loaded on demand to respect the 8 GB VRAM budget. OCR for scanned PDFs/images
-  (Tesseract) is a related future addition.
+- **Image/vision uploads** — **DONE** (see decision #12): an image auto-switches to Qwen2.5-VL-3B (+mmproj)
+  for that turn (borrowed, then restored) and answers via `Prompt([Text, Image(path)])`. Follow-ups:
+  multimodal chat *history* (only the current turn's image is passed; prior images degrade to an
+  `[Image: name]` placeholder — needs NobodyWho image-history support), surfacing vision-download progress
+  during a chat (today only in the Models modal), and OCR for scanned PDFs/images (Tesseract).
 - The repo also contains an unrelated `../github-dashboard` project — not part of LocalChat.
 
 ## Status (current)

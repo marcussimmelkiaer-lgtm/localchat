@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import ChatPane from './components/ChatPane'
 import TitleBar from './components/TitleBar'
+import ModelPicker from './components/ModelPicker'
 import { useConversations } from './hooks/useConversations'
 import { useChatStream } from './hooks/useChatStream'
+import { useModelManager } from './hooks/useModelManager'
 import { getHealth, refreshHealth, triggerWarmup } from './api/health'
 
 export default function App() {
   const convo = useConversations()
   const chat = useChatStream(convo)
+  const models = useModelManager()
   const [collapsed, setCollapsed] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [health, setHealth] = useState(null)
 
   useEffect(() => {
@@ -45,6 +49,28 @@ export default function App() {
     }
   }, [convo.ready])
 
+  // A model switch/download clears the backend's model_loaded flag while the new
+  // weights load, so re-poll /healthz while a model task is active (and once more
+  // after it settles) to flip the composer's "Preparing model…" gate correctly.
+  const taskStatus = models.task?.status
+  useEffect(() => {
+    if (taskStatus !== 'loading' && taskStatus !== 'downloading' && taskStatus !== 'ready') return
+    let alive = true
+    let timer
+    const tick = async () => {
+      const h = await refreshHealth()
+      if (!alive) return
+      setHealth(h)
+      if (!h.available || h.modelLoaded || h.modelError) return
+      timer = setTimeout(tick, 600)
+    }
+    tick()
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [taskStatus])
+
   const serverDown = health ? !health.available : false
   const modelError = health?.modelError || null
   const modelReady = !serverDown && !!health?.modelLoaded
@@ -62,6 +88,9 @@ export default function App() {
             onRename={convo.renameConversation}
             onDelete={convo.deleteConversation}
             onCollapse={() => setCollapsed(true)}
+            activeModel={models.data?.active}
+            modelBusy={models.busy}
+            onOpenModels={() => setPickerOpen(true)}
           />
         )}
         <ChatPane
@@ -78,6 +107,7 @@ export default function App() {
           onExpandSidebar={() => setCollapsed(false)}
         />
       </div>
+      {pickerOpen && <ModelPicker mgr={models} onClose={() => setPickerOpen(false)} />}
     </div>
   )
 }

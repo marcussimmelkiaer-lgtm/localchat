@@ -13,6 +13,10 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 @dataclass
 class Config:
     model_path: str | None = None
+    # Multimodal projector (mmproj) for vision models. Normally None: it is set
+    # automatically when the app loads a vision model (see the auto-switch in
+    # llm.py), not something the user hand-configures.
+    projection_model_path: str | None = None
     host: str = "127.0.0.1"
     port: int = 8765
     system_prompt: str | None = None
@@ -45,6 +49,7 @@ def load_config() -> Config:
             print(f"[config] failed to parse config.toml: {e}")
 
     cfg.model_path = data.get("model_path") or None
+    cfg.projection_model_path = data.get("projection_model_path") or None
     cfg.host = data.get("host", cfg.host)
     cfg.port = int(data.get("port", cfg.port))
     cfg.system_prompt = data.get("system_prompt") or None
@@ -60,6 +65,8 @@ def load_config() -> Config:
     env = os.environ
     if env.get("LOCALCHAT_MODEL_PATH"):
         cfg.model_path = env["LOCALCHAT_MODEL_PATH"]
+    if env.get("LOCALCHAT_PROJECTION_PATH"):
+        cfg.projection_model_path = env["LOCALCHAT_PROJECTION_PATH"]
     if env.get("LOCALCHAT_PORT"):
         cfg.port = int(env["LOCALCHAT_PORT"])
     if env.get("LOCALCHAT_USE_GPU"):
@@ -71,5 +78,7 @@ def load_config() -> Config:
 
     if cfg.model_path:
         cfg.model_path = str(Path(cfg.model_path).expanduser())
+    if cfg.projection_model_path:
+        cfg.projection_model_path = str(Path(cfg.projection_model_path).expanduser())
     cfg.db_path = str(Path(cfg.db_path).expanduser().resolve())
     return cfg

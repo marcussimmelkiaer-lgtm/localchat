@@ -4,12 +4,22 @@
 # Example (macOS): model_path = "/Users/you/Library/Application Support/nobodywho/models/Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
 model_path = ""
 
+# Multimodal projector (mmproj) for a vision model. Normally leave this unset:
+# uploading an image auto-switches to the curated vision model (Qwen2.5-VL 3B)
+# for that turn — downloading it on first use — then switches back. Set it by
+# hand only if you point model_path at a vision GGUF yourself.
+# projection_model_path = ""
+
 # Local server. Bound to 127.0.0.1 only. If the port is busy, an ephemeral one
 # is chosen automatically.
 port = 8765
 
 # Generation
-n_ctx = 4096
+# Context window (tokens). llama.cpp allocates the FULL n_ctx KV-cache upfront at
+# load, so this trades VRAM for headroom (system prompt + history + file/image
+# tokens + reply). On an 8 GB GPU: 16384 is a safe sweet spot with a 3–4B model;
+# 32768 (Qwen's native max) risks OOM there — drop to 8192 if a load fails.
+n_ctx = 16384
 use_gpu = true                          # use the GPU (Metal on macOS) if available; false = CPU only
 allow_thinking = false                  # reasoning models (Qwen3): keep <think> blocks out of chat
 system_prompt = """

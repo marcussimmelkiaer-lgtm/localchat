@@ -1,18 +1,31 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpIcon, StopIcon, PaperclipIcon, FileIcon, CloseIcon } from './icons'
 
 const MAX_HEIGHT = 200 // ~8 lines, then the textarea scrolls internally
 const ACCEPT = [
   '.csv', '.pdf', '.xlsx', '.xls', '.docx',
+  '.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp',
   'text/csv',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'image/*',
 ].join(',')
 
 function fileKey(f) {
   return `${f.name}:${f.size}:${f.lastModified}`
+}
+
+// Chip preview: a thumbnail for images (via a revoked object URL), else an icon.
+function FileThumb({ file }) {
+  const url = useMemo(
+    () => (file.type?.startsWith('image/') ? URL.createObjectURL(file) : null),
+    [file]
+  )
+  useEffect(() => () => url && URL.revokeObjectURL(url), [url])
+  if (url) return <img src={url} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+  return <FileIcon width={14} height={14} className="shrink-0 text-muted" />
 }
 
 export default function Composer({ onSend, onStop, isStreaming, disabled, placeholder, autoFocus }) {
@@ -77,9 +90,9 @@ export default function Composer({ onSend, onStop, isStreaming, disabled, placeh
             return (
               <div
                 key={key}
-                className="flex items-center gap-1.5 rounded-control border border-line bg-bubble py-1 pl-2 pr-1 text-[12px] text-ink"
+                className="flex items-center gap-1.5 rounded-control border border-line bg-bubble py-1 pl-1.5 pr-1 text-[12px] text-ink"
               >
-                <FileIcon width={14} height={14} className="shrink-0 text-muted" />
+                <FileThumb file={f} />
                 <span className="max-w-[180px] truncate">{f.name}</span>
                 <button
                   onClick={() => removeFile(key)}
@@ -110,7 +123,7 @@ export default function Composer({ onSend, onStop, isStreaming, disabled, placeh
           disabled={disabled}
           className="focus-ring flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           aria-label="Attach files"
-          title="Attach a file (CSV, PDF, Excel, Word)"
+          title="Attach a file (CSV, PDF, Excel, Word, or an image)"
         >
           <PaperclipIcon width={18} height={18} />
         </button>

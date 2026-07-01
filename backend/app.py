@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from . import store
 from .config import STATIC_DIR, Config
 from .llm import build_engine
-from .routes import chat, conversations
+from .routes import attachments, chat, conversations, models
 
 
 def create_app(cfg: Config) -> FastAPI:
@@ -31,6 +31,8 @@ def create_app(cfg: Config) -> FastAPI:
     app = FastAPI(title="LocalChat", lifespan=lifespan)
     app.include_router(conversations.router)
     app.include_router(chat.router)
+    app.include_router(models.router)
+    app.include_router(attachments.router)
 
     @app.get("/healthz")
     def healthz():

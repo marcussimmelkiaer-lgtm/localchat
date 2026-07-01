@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
-from .. import store
+from .. import files, store
 from ..schemas import (
     ConversationDetail,
     ConversationOut,
@@ -46,6 +46,10 @@ def rename_conversation(conv_id: str, body: RenameConversation):
 @router.delete("/{conv_id}", status_code=204)
 def delete_conversation(conv_id: str, request: Request):
     store.delete_conversation(conv_id)
+    try:
+        files.cleanup_conversation_images(conv_id)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         request.app.state.engine.evict(conv_id)
     except Exception:  # noqa: BLE001

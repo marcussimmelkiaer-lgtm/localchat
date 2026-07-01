@@ -4,20 +4,36 @@ import ThinkingBlock from './ThinkingBlock'
 import TokensPerSec from './TokensPerSec'
 import { CopyIcon, CheckIcon, RegenerateIcon, FileIcon } from './icons'
 
-function AttachmentChips({ attachments }) {
+function AttachmentChips({ attachments, messageId }) {
   if (!attachments || attachments.length === 0) return null
   return (
     <div className="mb-1.5 flex flex-wrap justify-end gap-2">
-      {attachments.map((a, i) => (
-        <div
-          key={`${a.name}:${i}`}
-          className="flex items-center gap-1.5 rounded-control border border-line bg-ground px-2 py-1 text-[12px] text-ink"
-          title={a.name}
-        >
-          <FileIcon width={14} height={14} className="shrink-0 text-muted" />
-          <span className="max-w-[200px] truncate">{a.name}</span>
-        </div>
-      ))}
+      {attachments.map((a, i) => {
+        const isImage = a.is_image || (a.mime || '').startsWith('image/')
+        // Live: the local previewUrl. Reload: re-served by message id + index.
+        const src = a.previewUrl || (isImage && messageId ? `/api/attachments/${messageId}/${i}` : null)
+        if (isImage && src) {
+          return (
+            <img
+              key={`${a.name}:${i}`}
+              src={src}
+              alt={a.name}
+              title={a.name}
+              className="max-h-44 max-w-[220px] rounded-card border border-line object-cover"
+            />
+          )
+        }
+        return (
+          <div
+            key={`${a.name}:${i}`}
+            className="flex items-center gap-1.5 rounded-control border border-line bg-ground px-2 py-1 text-[12px] text-ink"
+            title={a.name}
+          >
+            <FileIcon width={14} height={14} className="shrink-0 text-muted" />
+            <span className="max-w-[200px] truncate">{a.name}</span>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -78,7 +94,7 @@ export default function Message({ message, isLast, onRegenerate }) {
     return (
       <div className="group/msg flex animate-fade-in justify-end">
         <div className="flex max-w-[85%] flex-col items-end">
-          <AttachmentChips attachments={message.attachments} />
+          <AttachmentChips attachments={message.attachments} messageId={message.id} />
           {message.content && (
             <div className="whitespace-pre-wrap break-words rounded-bubble bg-bubble px-4 py-2.5 text-[15px] leading-relaxed text-ink">
               {message.content}

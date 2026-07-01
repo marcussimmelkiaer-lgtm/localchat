@@ -8,7 +8,7 @@ import threading
 from fastapi import APIRouter, HTTPException, Request
 from sse_starlette.sse import EventSourceResponse
 
-from .. import store
+from .. import files, store
 from ..files import extract_attachment
 from ..schemas import ChatStreamRequest, RegenerateRequest, StopRequest
 
@@ -23,7 +23,20 @@ async def stream(req: ChatStreamRequest, request: Request):
     # text as `content` (what the bubble shows) and the extracted text inside the
     # attachment metadata; prompt_from_store folds it in front of the prompt so
     # the model sees the file contents without cluttering the chat bubble.
-    attachments = [extract_attachment(a.model_dump()) for a in req.attachments]
+    # Images are stored to disk (downscaled) keyed by this message id, so the
+    # vision model can read them by path and the UI can re-serve thumbnails.
+    attachments = []
+    for i, a in enumerate(req.attachments):
+        meta = extract_attachment(a.model_dump())
+        if meta.get("is_image"):
+            try:
+                meta["path"] = files.save_image(
+                    a.data_b64, req.conversation_id, req.user_message_id, i
+                )
+            except Exception as e:  # noqa: BLE001 - fall back to a non-image note
+                meta["is_image"] = False
+                meta["text"] = f"[could not read image: {e}]"
+        attachments.append(meta)
     # Persist the user turn + an empty assistant placeholder before generating.
     store.add_message(
         req.user_message_id,

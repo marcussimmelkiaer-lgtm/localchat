@@ -20,10 +20,13 @@ class AttachmentIn(BaseModel):
 
 
 class AttachmentMeta(BaseModel):
-    """Lightweight attachment metadata returned to the UI (no bytes/text)."""
+    """Lightweight attachment metadata returned to the UI (no bytes/text). The
+    on-disk `path` and extracted `text` are intentionally not exposed here — the
+    UI fetches image thumbnails via GET /api/attachments/{message_id}/{idx}."""
     name: str
     mime: str = ""
     size: int = 0
+    is_image: bool = False
 
 
 class MessageOut(BaseModel):
@@ -73,3 +76,18 @@ class RegenerateRequest(BaseModel):
 
 class StopRequest(BaseModel):
     conversation_id: str
+
+
+class DownloadModelRequest(BaseModel):
+    spec: str
+    then_switch: bool = True
+    # Additional files fetched in the same task (e.g. a vision model's mmproj).
+    extra_specs: list[str] = []
+
+
+class SwitchModelRequest(BaseModel):
+    path: str
+
+
+class DeleteModelRequest(BaseModel):
+    path: str

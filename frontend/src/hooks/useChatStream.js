@@ -132,7 +132,18 @@ export function useChatStream(convo) {
           data_b64: await readFileBase64(f),
         }))
       )
-      const attachmentMeta = fileList.map((f) => ({ name: f.name, mime: f.type || '', size: f.size }))
+      const attachmentMeta = fileList.map((f) => {
+        const isImage = (f.type || '').startsWith('image/')
+        return {
+          name: f.name,
+          mime: f.type || '',
+          size: f.size,
+          is_image: isImage,
+          // Local preview so the optimistic bubble shows the image instantly,
+          // before the row is persisted and the served endpoint is reachable.
+          previewUrl: isImage ? URL.createObjectURL(f) : undefined,
+        }
+      })
       c.titleConversationIfEmpty(convId, content || fileList[0]?.name || '')
 
       const userMsg = {
