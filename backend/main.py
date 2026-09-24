@@ -11,6 +11,7 @@ import urllib.request
 import uvicorn
 
 from .app import create_app
+from .bootstrap import bootstrap
 from .config import load_config
 
 
@@ -220,7 +221,28 @@ def _initial_geometry_win():
         return (None, None, 1100, 760)
 
 
+def _ensure_std_streams():
+    """Give a windowless launch somewhere to write.
+
+    With no console (the frozen build is console=False; run.bat starts
+    pythonw.exe) sys.stdout/stderr are None, and uvicorn's log formatter crashes
+    on sys.stdout.isatty() at startup. Point both at a log file in the data dir
+    instead (fresh each launch) — also useful when a user reports a problem."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    from .paths import data_dir
+
+    log = open(data_dir() / "LocalChat.log", "w", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stdout or log
+    sys.stderr = sys.stderr or log
+
+
 def main():
+    _ensure_std_streams()
+    # First-launch setup for packaged builds (writable config, adopt a
+    # cached default model). No-op from a source checkout. Must run before load_config
+    # so the config it writes is picked up.
+    bootstrap()
     cfg = load_config()
     port = _pick_port(cfg.host, cfg.port)
     app = create_app(cfg)

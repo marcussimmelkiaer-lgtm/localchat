@@ -162,6 +162,8 @@ class NobodyWhoEngine:
         if self._task_busy():
             return {"ok": False, "error": "A model download or switch is already running."}
         self._set_task(action="download", target=spec, status="downloading", fraction=0.0, error=None)
+        if not self._loaded.is_set():
+            self.model_error = None  # a retry clears the previous failure
         threading.Thread(
             target=self._do_download, args=(spec, then_switch, extra_specs), daemon=True
         ).start()
@@ -185,6 +187,8 @@ class NobodyWhoEngine:
             pass
 
     def _do_download(self, spec: str, then_switch: bool, extra_specs: list[str] | None = None) -> None:
+        from . import models_catalog
+
         def _fetch(s: str):
             import nobodywho
 
@@ -193,6 +197,18 @@ class NobodyWhoEngine:
             except TypeError:
                 return nobodywho.download_model(s)
 
+        # Accept forgiving input (a bare `owner/name` repo, a HF URL, or a full
+        # spec) and turn it into a concrete `huggingface:owner/repo/file.gguf`.
+        # Runs here on the daemon thread — it may hit the HF API — with errors
+        # surfaced through task state like any other download failure. Catalog-
+        # supplied extra_specs (e.g. an mmproj) are already concrete; leave them.
+        try:
+            spec = models_catalog.resolve_spec(spec)
+        except ValueError as e:
+            self._download_failed(str(e))
+            return
+        self._set_task(target=spec)
+
         try:
             local_path = _fetch(spec)
             for s in extra_specs or []:
@@ -200,16 +216,27 @@ class NobodyWhoEngine:
                     self._set_task(fraction=0.0)  # reset the bar for the next file
                     _fetch(s)
         except Exception as e:  # noqa: BLE001
-            self._set_task(status="error", error=f"Download failed: {e}")
+            self._download_failed(f"Download failed: {e}")
             return
         if not local_path or not os.path.isfile(local_path):
-            self._set_task(status="error", error="Download finished but the file is missing.")
+            self._download_failed("Download finished but the file is missing.")
             return
         self._set_task(fraction=1.0)
         if then_switch:
             self._do_switch(str(local_path))
         else:
             self._set_task(status="ready", target=str(local_path))
+
+    def _download_failed(self, error: str) -> None:
+        self._set_task(status="error", error=error)
+        # With no model loaded at all (fresh install, offline first launch) the
+        # chat is unusable, so surface it as the model error the UI shows. A
+        # failed extra download while a model is loaded stays a picker-only error.
+        if not self._loaded.is_set():
+            self.model_error = (
+                f"{error} — LocalChat needs internet once to fetch its model. "
+                "Reconnect and restart, or download one from Models."
+            )
 
     def _do_switch(self, path: str) -> None:
         self._set_task(status="loading", target=path)
@@ -255,6 +282,8 @@ class NobodyWhoEngine:
         the event loop. It runs on a daemon thread here; a concurrent first
         message blocks on the same _model_lock (no double load). The UI (a
         separate WebView2 process) stays responsive while this runs."""
+        if self._start_first_run_download():
+            return
         with self._model_lock:
             if self._loaded.is_set() or self._warming:
                 return
@@ -269,6 +298,25 @@ class NobodyWhoEngine:
                 self._warming = False
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def _start_first_run_download(self) -> bool:
+        """Packaged builds ship without weights (slim single-file installers), so
+        on a fresh install there is no model yet. Fetch the default in the
+        background — same download→switch task the model picker uses, so it
+        persists model_path and /healthz reports progress. Returns True if a
+        download is (now) running, in which case the caller must not try to load.
+
+        Source checkouts are untouched: run.sh / run.bat already ran fetch_model,
+        and a hand-set bad path should surface as an error, not a 2.5 GB fetch."""
+        from . import paths
+
+        if not paths.is_frozen() or self.current_model()["exists"]:
+            return False
+        if self.task_status()["status"] == "downloading":
+            return True
+        from . import fetch_model
+
+        return self.start_download(fetch_model.default_spec(), then_switch=True)["ok"]
 
     def _ensure_model(self):
         if self._model is not None:

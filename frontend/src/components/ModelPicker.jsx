@@ -153,13 +153,13 @@ export default function ModelPicker({ mgr, onClose }) {
 
         <form onSubmit={submitCustom} className="border-t border-line px-3 py-3">
           <label className="mb-1.5 block px-1 text-[11px] font-medium uppercase tracking-wide text-muted">
-            Download by spec
+            Download from Hugging Face
           </label>
           <div className="flex gap-2">
             <input
               value={spec}
               onChange={(e) => setSpec(e.target.value)}
-              placeholder="huggingface:Owner/Repo-GGUF/file.gguf"
+              placeholder="Qwen/Qwen3-0.6B"
               disabled={busy}
               className="focus-ring min-w-0 flex-1 rounded-control border border-line bg-ground px-3 py-2 text-[12.5px] text-ink placeholder:text-muted disabled:opacity-60"
             />
@@ -171,6 +171,11 @@ export default function ModelPicker({ mgr, onClose }) {
               Download
             </button>
           </div>
+          <p className="mt-1.5 px-1 text-[11px] text-muted">
+            Paste a repo id (<span className="text-ink">Qwen/Qwen3-0.6B</span>), add{' '}
+            <span className="text-ink">:Q5_K_M</span> to pick a quant, or paste a full{' '}
+            <span className="text-ink">owner/repo/file.gguf</span> / Hugging Face URL.
+          </p>
         </form>
       </div>
     </div>

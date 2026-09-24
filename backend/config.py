@@ -5,9 +5,13 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Project root = parent of the backend/ package.
-ROOT = Path(__file__).resolve().parent.parent
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+from .paths import bundle_dir, data_dir
+
+# Writable per-user dir (repo root in a source checkout; app-data when frozen).
+# config.toml, the SQLite DB and uploads live here.
+ROOT = data_dir()
+# Read-only shipped assets (repo root in a checkout; the bundle when frozen).
+STATIC_DIR = bundle_dir() / "backend" / "static"
 
 
 @dataclass

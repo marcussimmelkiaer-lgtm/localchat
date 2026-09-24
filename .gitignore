@@ -11,3 +11,16 @@ frontend/node_modules/
 frontend/dist/
 
 # backend/static is the COMMITTED prebuilt SPA — do not ignore it.
+
+# Packaging build outputs (see packaging/README.md).
+build/
+dist/
+*.spec.log
+build_pyi.log
+frozen_run.log
+packaging/windows/models/
+packaging/windows/MicrosoftEdgeWebview2Setup.exe
+# (*.gguf is already ignored above, covering staged models too.)
+
+# Runtime log of windowless launches (backend/main.py _ensure_std_streams).
+LocalChat.log

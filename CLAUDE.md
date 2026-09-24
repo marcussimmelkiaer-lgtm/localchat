@@ -250,7 +250,8 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    TOML triple-quoted multi-line string (`tomllib` parses it fine). Read at startup, so a relaunch picks
    it up; history rebuilt per turn means existing chats get the new prompt too.
 11. **In-app model download & switching** (built — was decision-#2's deferred "Known issue"). A runtime
-   model manager: curated Qwen3 catalog (1.7B/4B/8B Q4_K_M) **+** a custom `huggingface:` spec field, with
+   model manager: curated Qwen3 catalog (1.7B/4B/8B Q4_K_M) **+** a forgiving Hugging Face download field
+   (accepts a **bare repo id** — see #14 — as well as full specs/URLs), with
    download progress, runtime switch, and delete-to-reclaim-disk. **Reuses the existing load lifecycle in
    reverse**: a swap clears `engine._loaded` + the `SessionRegistry`, nulls `_model`, sets the new
    `cfg.model_path`, and re-runs `_ensure_model()` under `_model_lock` — so the existing `/healthz`
@@ -316,6 +317,63 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    4B** — drop to 8192 if a bigger model fails to load. Read at startup + history rebuilt per turn, so a relaunch
    applies it to existing chats too. (NB: the local `config.toml` currently points `model_path` at a small
    `Mythos-nano.Q4_K_M` model, which leaves even more room than the Qwen3-4B the docs above assume.)
+14. **Forgiving Hugging Face download field** (built on top of #11's custom-spec field). Users naturally copy
+   a repo id off a HF page (`Qwen/Qwen3-0.6B`), but `download_model` wants a **concrete GGUF file**
+   (`huggingface:owner/repo/file.gguf`) — and a base repo like `Qwen/Qwen3-0.6B` is safetensors-only; the GGUF
+   lives in a sibling `…-GGUF` repo and still needs a quant chosen. New `models_catalog.resolve_spec(user_input)`
+   bridges the gap and accepts, in order: a local file path (as-is); a full `huggingface:…` spec (as-is);
+   the same without the prefix; a direct `https://…/file.gguf` URL (as-is) or a HF page/blob/resolve URL
+   (reduced to a repo id, then resolved); and a **bare `owner/name`** — it queries the public HF API
+   (`https://huggingface.co/api/models/{repo}`, stdlib `urllib`, no new dep) for `.gguf` siblings, trying
+   `owner/name` then `owner/name-GGUF`, and picks a quant (**Q4_K_M preferred**, then fallbacks in
+   `_PREFERRED_QUANTS`; single-file GGUFs preferred over `-00001-of-000NN` shards since `download_model`
+   fetches one file). An optional **`:QUANT` suffix** (`Qwen/Qwen3-0.6B:Q5_K_M`) forces a specific quant —
+   and if that repo doesn't ship it, resolution **fails with a clear message** rather than silently fetching a
+   different (possibly much larger) file. Wired into `llm._do_download`: resolution runs on the existing
+   daemon thread (it may hit the network), updates the task `target` to the resolved file, and surfaces
+   `ValueError`s through the normal task-error path; catalog-supplied `extra_specs` (mmproj) are already
+   concrete and left unresolved. Frontend `ModelPicker.jsx`: field relabeled "Download from Hugging Face",
+   placeholder `Qwen/Qwen3-0.6B`, with a hint line. Verified: offline forms + **live** resolution of
+   `Qwen/Qwen3-0.6B` → `…Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf` (Qwen's small-model GGUF repos ship only Q8_0,
+   same quirk noted for 1.7B in the catalog) + explicit-quant-not-found erroring. The actual download+switch on
+   a resolved model is left to manual one-time verification (consistent with #8/#11).
+15. **Downloadable installers (Windows + macOS) — ONE file per OS, no models inside** (built). Ship the app as
+   double-click installers instead of git-clone-and-setup: `LocalChat-Setup-x64.exe` (~37 MB) and
+   `LocalChat-arm64.dmg`. Two layers: **PyInstaller** (`packaging/localchat.spec`) freezes a small onedir app —
+   Python + deps + the native `nobodywho.pyd` + `backend/static`; then a **platform installer** (Inno Setup / DMG)
+   wraps it. **Why no models (user decision, Sep 2026):** an earlier version preloaded 3 models (Qwen3-4B/1.7B/0.6B,
+   ~5 GB), but Windows won't run a `Setup.exe` much over ~4 GB, so Inno had to **disk-span** into `Setup.exe` +
+   `-1/-2/-3.bin` — not a single file, and too big for GitHub releases. The user chose the **slim, download-on-first-
+   run** variant: `NobodyWhoEngine._start_first_run_download` (called from `start_warmup`, **frozen builds only**)
+   kicks off the existing download→switch task (#11) for `fetch_model.default_spec()` (Qwen3-4B,
+   `LOCALCHAT_DEFAULT_MODEL` override) when `model_path` doesn't exist; `_do_switch` persists `model_path`.
+   `/healthz` now includes `model_task`, and the composer shows **"Downloading model… N%"** (`App.jsx` → `ChatPane`
+   `downloadPct`). A failed download with no model loaded sets `model_error` (via `_download_failed`) with a "needs
+   internet once — reconnect and restart, or use Models" hint; the next launch retries. **First launch needs internet
+   once**; afterward fully offline. Source checkouts unchanged (run.sh/run.bat still run `fetch_model`, and a hand-set
+   bad path errors rather than triggering a 2.5 GB fetch). **Key enabler — writable paths** (`backend/paths.py`): a
+   frozen bundle is read-only, so `config.toml`/DB/`uploads/` moved to a per-user data dir (`%LOCALAPPDATA%\LocalChat`
+   / `~/Library/Application Support/LocalChat`) while static/template come from `bundle_dir()`. **Dev is unchanged**:
+   not-frozen → `data_dir()==bundle_dir()==repo root`. `backend/bootstrap.py` runs **only when frozen** (first in
+   `main.main`): seeds `config.toml` from the bundled template and adopts an already-cached Qwen3 model
+   (`DEFAULT_CANDIDATES`) so a reinstall doesn't re-download. **Windows** (`packaging/windows/localchat.iss` +
+   `build_win.ps1`): Inno Setup, **per-user** (`PrivilegesRequired=lowest`), app → `%LOCALAPPDATA%\Programs\LocalChat`,
+   `ExtraDiskSpaceRequired` reserves room for the model, WebView2 Evergreen bootstrapper bundled; `build_win.ps1`
+   falls back to `python` on PATH when there's no venv (CI). Inno Setup is installed via winget at
+   `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe` (probed). **macOS** (`packaging/macos/build_mac.sh`): PyInstaller
+   `.app` (**arm64-only**) → `.dmg`; same first-run download as Windows (no more in-bundle seed models). **Signing
+   deferred** (per user): unsigned — Windows SmartScreen "More info → Run anyway", macOS right-click→Open / `xattr`;
+   hooks stubbed in `build_mac.sh` + the `.iss`/ps1. **Verified on Windows**: built the single 37 MB `Setup.exe`,
+   silent-installed it **alone** (no side files) into a scratch dir, installed app booted headless → `/api/warmup`
+   loaded the model on the GPU; first-run download path verified in source mode with `is_frozen` patched (download →
+   switch → config persisted; bogus spec → `model_error` surfaced). NB: installer test installs share the AppId —
+   uninstalling a scratch install removes the real install's uninstall entry (reinstall to restore). **CI**
+   (`.github/workflows/build-installers.yml`, `workflow_dispatch` + `v*` tags): `macos-14` builds the `.dmg`,
+   `windows-latest` builds the `.exe`, each uploaded as an artifact — how the **macOS `.dmg` gets produced**.
+   PyInstaller is **build-only**, deliberately NOT in `requirements.txt`. **macOS build hardening (unrun)**: the
+   spec's `IS_MAC` branch `collect_all`s the pyobjc frameworks (Cocoa backend imports them dynamically);
+   `build_mac.sh` guards **arm64 AND Python 3.11+** (keep it **LF** — `.gitattributes` `*.sh eol=lf`). See
+   `packaging/README.md` + the macOS TODO under Known issues.
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
@@ -348,7 +406,11 @@ keeping the model + maxed GPU + ruling out speculative decoding ⇒ effectively 
 - **Keep js_api attributes underscore-private** (`_window`, `_cmds`). pywebview tries to serialize
   public api attributes to JS; a public `window` reference makes it walk the WinForms object graph and
   spam the console with `AccessibilityObject ... maximum recursion depth exceeded` (non-fatal but ugly).
-- `run.bat` uses **`python.exe`** (not `pythonw` via `start` — that caused an instant-close).
+- `run.bat` does setup in its console, then **`start "" venv\Scripts\pythonw.exe -m backend.main`** so no terminal
+  stays open. The old "pythonw instant-close" was uvicorn crashing on `sys.stdout.isatty()` with no console
+  (stdout/stderr are `None`); `main._ensure_std_streams()` now redirects both to `LocalChat.log` in the data dir
+  (repo root in dev) — same fix makes the windowed (`console=False`) frozen build start. Live logs: run
+  `venv\Scripts\python.exe -m backend.main` directly.
 - Can't screenshot the pywebview window directly. To "see" the SPA, run the server headless and use
   Edge headless: `msedge --headless=new --disable-gpu --user-data-dir=<tmp> --screenshot=<png>
   --virtual-time-budget=8000 http://127.0.0.1:8765`. (The custom TitleBar only renders inside pywebview.)
@@ -361,11 +423,28 @@ keeping the model + maxed GPU + ruling out speculative decoding ⇒ effectively 
   Already maxed at that clock (94% GPU / 91% mem util). To go faster: set the laptop vendor app to
   Performance mode, NVIDIA Control Panel → "Prefer maximum performance", Windows "Best performance".
   `nvidia-smi -pl` is blocked on laptop GPUs. (Switching 8B→4B already bought ~1.5× — ~50 vs ~33 tok/s.)
-- **In-app model switching/downloading** — **DONE** (see decision #11): runtime model picker (curated
-  Qwen3 catalog + custom `huggingface:` spec), download with progress, switch, and delete, via
+- **In-app model switching/downloading** — **DONE** (see decisions #11 + #14): runtime model picker (curated
+  Qwen3 catalog + a forgiving HF download field that accepts a bare `owner/name` repo id, `:QUANT` suffix,
+  full specs, or URLs — `models_catalog.resolve_spec`), download with progress, switch, and delete, via
   `backend/routes/models.py` + the sidebar `ModelPicker`. Editing `model_path` in `config.toml` by hand
   still works as a fallback. Possible follow-ups: more catalog entries / non-Qwen families (caveat: a
   different chat template/sampler may need tuning), and surfacing the live download progress in CI.
+- **Downloadable installers** — **Windows DONE, macOS needs a real build** (see decision #15). Windows single-file
+  `dist/installer/LocalChat-Setup-x64.exe` built + silent-install-verified on this machine. Outstanding:
+  - **macOS `.dmg` has never been built/run** — the scripts + spec exist but are unexercised. Build on an
+    **Apple-Silicon, Python 3.11+** Mac: `pip install -r requirements.txt pyinstaller` →
+    `./packaging/macos/build_mac.sh`. Or trigger the `macos-14` CI job (`.github/workflows/build-installers.yml`).
+  - **Verify the frozen `.app` opens a window** (top risk — pyobjc dynamic imports; spec now `collect_all`s them,
+    but confirm). Quick isolation: `LOCALCHAT_NO_WINDOW=1 dist/LocalChat.app/Contents/MacOS/LocalChat` + curl
+    `/healthz` — if that works but the GUI doesn't, it's purely a pyobjc/window issue.
+  - **Frameless-window drag on WKWebView** (also the open item under decision #12-era notes / top of this file):
+    if the title bar doesn't drag, add the `pywebview-drag-region` CSS class in `TitleBar.jsx` or `easy_drag=True`.
+  - **Real first-run download from a clean machine** not yet exercised in a frozen build (this machine already has
+    the model cached, so bootstrap adopts it); the path itself was verified in source mode.
+  - **Signing/notarization** (deferred per user): unsigned today (Win SmartScreen "Run anyway"; mac right-click →
+    Open / `xattr -dr com.apple.quarantine`). Wire the stubbed `codesign`/`notarytool` block in `build_mac.sh` and
+    a `signtool` step in `build_win.ps1` once the NobodyWho Apple Developer + Authenticode certs exist.
+  - **Hosting**: installers are now small enough for GitHub release assets.
 - **No LaTeX rendering**: Qwen3 sometimes emits `$...$` / `$$...$$`; the markdown renderer shows it raw.
   Could add `remark-math` + KaTeX.
 - **Fullscreen** works (title-bar button + Esc, via `SetWindowPos` bounds swap — see gotchas/decision #3).
@@ -402,3 +481,17 @@ real generated files; attachment-column DB migration tested on an old-schema DB.
 - **Model swap 8B→4B**: now running **Qwen3-4B Q4_K_M** (~50 tok/s, ~2.5 GB VRAM); 8B still cached.
   Pure `config.toml` change (same Qwen3 family). Verified loading + generation on GPU.
 - Researched but NOT built: in-app model picker/downloader (see Known issues).
+
+**Most recent session (packaging + HF download UX):**
+- **Forgiving Hugging Face download field** (decision #14): the model picker accepts a bare `owner/name`
+  repo id (`Qwen/Qwen3-0.6B`), a `:QUANT` suffix, full specs, or URLs, resolved via
+  `models_catalog.resolve_spec` (queries the HF API, prefers Q4_K_M). Verified offline + live.
+- **Downloadable installers** (decision #15): one installer file per OS (`Setup.exe` ~37 MB / `.dmg`), no
+  models inside — the app downloads Qwen3-4B on first launch with progress in the composer. New
+  `backend/paths.py` (writable-data-dir vs read-only-bundle), `backend/bootstrap.py` (frozen-only first-run setup),
+  `run_app.py`, `packaging/` (PyInstaller spec, Inno `.iss`, `build_win.ps1`, `build_mac.sh`) and
+  `.github/workflows/build-installers.yml`. **Dev workflow unchanged**. **Windows single-file installer built +
+  silent-install-verified on this machine**. **macOS build is written but UNRUN** — see the macOS TODO under Known
+  issues. Signing deferred per user.
+- CURRENT STATE: everything above works on Windows; the outstanding work is the **macOS `.dmg` build/verify**
+  and (whenever ready) **signing**.

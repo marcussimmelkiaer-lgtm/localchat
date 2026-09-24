@@ -34,4 +34,8 @@ REM No-op once a valid model_path is set; sets it automatically after download.
 "venv\Scripts\python.exe" -m backend.fetch_model
 
 REM --- Launch the app (frameless native window) ---
-"venv\Scripts\python.exe" -m backend.main
+REM pythonw = no console window: the setup above needs this terminal, the app
+REM doesn't. `start` detaches it so this window closes. Output goes to
+REM LocalChat.log (see backend/main.py _ensure_std_streams). For a console
+REM with live logs, run:  venv\Scripts\python.exe -m backend.main
+start "" "venv\Scripts\pythonw.exe" -m backend.main

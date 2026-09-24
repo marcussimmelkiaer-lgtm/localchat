@@ -3,9 +3,10 @@ import EmptyState from './EmptyState'
 import MessageList from './MessageList'
 import { SidebarIcon } from './icons'
 
-function statusText({ serverDown, modelError, modelReady }) {
+function statusText({ serverDown, modelError, modelReady, downloadPct }) {
   if (serverDown) return 'Cannot reach the local server'
   if (modelError) return modelError
+  if (downloadPct != null) return `Downloading model… ${downloadPct}%`
   if (!modelReady) return 'Preparing model…'
   return null
 }
@@ -19,20 +20,23 @@ export default function ChatPane({
   onRegenerate,
   modelReady,
   modelError,
+  downloadPct,
   serverDown,
   sidebarCollapsed,
   onExpandSidebar,
 }) {
   const isEmpty = messages.length === 0
   const blocked = !modelReady
-  const status = statusText({ serverDown, modelError, modelReady })
+  const status = statusText({ serverDown, modelError, modelReady, downloadPct })
   const placeholder = serverDown
     ? 'Server unavailable'
     : modelError
       ? 'Model unavailable'
-      : !modelReady
-        ? 'Preparing model…'
-        : 'Message…'
+      : downloadPct != null
+        ? 'Downloading model (first launch only)…'
+        : !modelReady
+          ? 'Preparing model…'
+          : 'Message…'
 
   return (
     <div className="relative flex h-full min-w-0 flex-1 flex-col bg-ground">

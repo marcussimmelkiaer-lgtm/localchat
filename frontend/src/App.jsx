@@ -74,6 +74,11 @@ export default function App() {
   const serverDown = health ? !health.available : false
   const modelError = health?.modelError || null
   const modelReady = !serverDown && !!health?.modelLoaded
+  // A packaged build downloads its model on first launch; show that progress
+  // instead of a bare "Preparing model…".
+  const task = health?.modelTask
+  const downloadPct =
+    !modelReady && task?.status === 'downloading' ? Math.round((task.fraction || 0) * 100) : null
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-ground-2 text-ink">
@@ -102,6 +107,7 @@ export default function App() {
           onRegenerate={chat.regenerate}
           modelReady={modelReady}
           modelError={modelError}
+          downloadPct={downloadPct}
           serverDown={serverDown}
           sidebarCollapsed={collapsed}
           onExpandSidebar={() => setCollapsed(false)}

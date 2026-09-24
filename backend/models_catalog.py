@@ -17,6 +17,10 @@ and case so Windows paths don't produce false mismatches.
 
 from __future__ import annotations
 
+import json
+import os
+import re
+import urllib.request
 from pathlib import PurePath
 
 # Curated, one-click models. `spec` is the `huggingface:` download spec; its tail
@@ -202,3 +206,137 @@ def is_cached_path(path: str) -> bool:
     itself reports as cached models, never an arbitrary path the client sends."""
     target = _norm(path)
     return any(_norm(c["path"]) == target for c in cached_models())
+
+
+# --- Forgiving download-spec resolution -------------------------------------
+#
+# NobodyWho's download_model() wants a concrete GGUF file:
+# `huggingface:owner/repo/file.gguf`. Users, though, naturally copy a repo id off
+# a Hugging Face page ("Qwen/Qwen3-0.6B") — which is usually the *base* repo with
+# no GGUF at all; the GGUF lives in a sibling "…-GGUF" repo and still needs a
+# quant picked. `resolve_spec` bridges that gap so the download field accepts the
+# short form as well as the full spec / URL forms.
+
+# Quant preference when the user doesn't name one — mirrors the app's Q4_K_M
+# default (best size/quality trade-off), then reasonable fallbacks.
+_PREFERRED_QUANTS = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q6_K", "Q5_K_S", "Q8_0", "Q3_K_M", "Q2_K"]
+
+
+def _hf_gguf_files(repo: str) -> list[str]:
+    """`.gguf` filenames in a Hugging Face repo via its public API.
+
+    Returns [] on 404/network error (best-effort — the caller tries the next
+    candidate repo, then raises a helpful message if all come up empty)."""
+    url = f"https://huggingface.co/api/models/{repo}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "localchat"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - any failure just means "no files here"
+        return []
+    files = []
+    for sib in data.get("siblings") or []:
+        name = sib.get("rfilename") if isinstance(sib, dict) else None
+        if name and name.lower().endswith(".gguf"):
+            files.append(name)
+    return files
+
+
+def _is_shard(fname: str) -> bool:
+    """A multi-part GGUF (…-00001-of-00003.gguf). download_model fetches one file,
+    so we avoid picking a shard unless nothing else is available."""
+    return re.search(r"-\d{5}-of-\d{5}\.gguf$", fname, re.IGNORECASE) is not None
+
+
+def _pick_gguf(files: list[str], want_quant: str | None) -> str | None:
+    """Choose one GGUF: an explicitly-requested quant if present, else the first
+    preferred quant, else the first single-file GGUF."""
+    if not files:
+        return None
+    singles = [f for f in files if not _is_shard(f)] or files
+    if want_quant:
+        # An explicit quant is a hard request — match it or give up (so the
+        # caller can say "no such quant" rather than silently fetch a different,
+        # possibly much larger, file).
+        wq = want_quant.lower()
+        for f in singles:
+            if wq in f.lower():
+                return f
+        return None
+    for q in _PREFERRED_QUANTS:
+        for f in singles:
+            if q.lower() in f.lower():
+                return f
+    return singles[0]
+
+
+def resolve_spec(user_input: str) -> str:
+    """Turn forgiving user input into a concrete download spec.
+
+    Accepts, in order of increasing help:
+      - a local file path (returned as-is);
+      - a full `huggingface:owner/repo/file.gguf` spec (returned as-is);
+      - the same without the prefix (`owner/repo/file.gguf` -> prefixed);
+      - a direct `https://.../file.gguf` URL (returned as-is) or a Hugging Face
+        page / blob / resolve URL (reduced to a repo id, then resolved);
+      - a bare repo id `owner/name` — the GGUF repo is discovered (trying
+        `owner/name` then the conventional `owner/name-GGUF`) and a quant chosen
+        automatically (Q4_K_M preferred). An optional `:QUANT` suffix forces one,
+        e.g. `Qwen/Qwen3-0.6B:Q5_K_M`.
+
+    Raises ValueError with an actionable message when nothing resolves."""
+    s = (user_input or "").strip()
+    if not s:
+        raise ValueError("No model given.")
+
+    if os.path.isfile(s):
+        return s
+
+    if s.lower().startswith(("http://", "https://")):
+        low = s.lower()
+        if "huggingface.co/" in low:
+            after = s.split("huggingface.co/", 1)[1]
+            # Strip /resolve/<rev>/, /blob/<rev>/, /tree/<rev>/ markers so a link
+            # copied from the file browser collapses to owner/repo[/file].
+            after = re.sub(r"/(resolve|blob|tree)/[^/]+/", "/", after)
+            s = after.split("?", 1)[0].rstrip("/")
+            # fall through to the huggingface-path handling below
+        elif low.endswith(".gguf"):
+            return s  # arbitrary direct GGUF URL — nobodywho fetches it directly
+        else:
+            raise ValueError("Give a Hugging Face repo (owner/name) or a direct .gguf URL.")
+
+    if s.lower().startswith("huggingface:"):
+        s = s.split(":", 1)[1].strip()
+
+    # Optional :QUANT selector on a bare repo (e.g. Qwen/Qwen3-0.6B:Q5_K_M).
+    want_quant = None
+    m = re.match(r"^([^/\s]+/[^/\s:]+):([A-Za-z0-9_]+)$", s)
+    if m:
+        s, want_quant = m.group(1), m.group(2)
+
+    if s.lower().endswith(".gguf"):
+        return f"huggingface:{s}"
+
+    parts = [p for p in s.split("/") if p]
+    if len(parts) != 2:
+        raise ValueError(
+            f"Couldn't understand '{user_input}'. Use owner/name "
+            "(e.g. Qwen/Qwen3-0.6B) or a full owner/repo/file.gguf spec."
+        )
+    owner, name = parts
+
+    candidates = [f"{owner}/{name}"]
+    if not name.lower().endswith("-gguf"):
+        candidates.append(f"{owner}/{name}-GGUF")
+
+    for repo in candidates:
+        chosen = _pick_gguf(_hf_gguf_files(repo), want_quant)
+        if chosen:
+            return f"huggingface:{repo}/{chosen}"
+
+    hint = f" with quant '{want_quant}'" if want_quant else ""
+    raise ValueError(
+        f"No GGUF{hint} found for '{user_input}'. Tried: {', '.join(candidates)}. "
+        "Paste the exact owner/repo/file.gguf if the model lives elsewhere."
+    )

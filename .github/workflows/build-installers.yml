@@ -1,0 +1,82 @@
+name: Build installers
+
+# Produces the downloadable installers — ONE file per OS, no models inside
+# (the app downloads its default model on first launch):
+#   - macOS (Apple Silicon): dist/LocalChat-arm64.dmg
+#   - Windows (x64):         dist/installer/LocalChat-Setup-x64.exe
+#
+# No GPU is needed to FREEZE (only to run inference), so these jobs work on
+# stock runners. Each installer is ~100 MB — small enough for a GitHub release
+# asset. They ship UNSIGNED for now (see packaging/README.md); signing/
+# notarization hooks are stubbed in the build scripts. Manual trigger or a
+# version tag only.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  macos:
+    name: macOS .dmg (Apple Silicon)
+    runs-on: macos-14 # arm64 — the only arch nobodywho ships a wheel for
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Nicer DMG layout (optional)
+        run: brew install create-dmg || true
+
+      - name: Build .app + .dmg
+        run: |
+          chmod +x packaging/macos/build_mac.sh
+          ./packaging/macos/build_mac.sh
+
+      - uses: actions/upload-artifact@v4 # Node 20; fine for artifact upload
+        with:
+          name: LocalChat-macos-arm64
+          path: dist/LocalChat-arm64.dmg
+          retention-days: 7
+          if-no-files-found: error
+
+  windows:
+    name: Windows installer (x64)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: ./packaging/build_win.ps1 -SkipFrontend
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocalChat-windows-x64
+          path: dist/installer/LocalChat-Setup-x64.exe
+          retention-days: 7
+          if-no-files-found: error

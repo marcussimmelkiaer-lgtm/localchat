@@ -18,13 +18,25 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-CONFIG_PATH = ROOT / "config.toml"
+from .paths import bundle_dir, data_dir
+
+# config.toml is WRITABLE, so it lives in the per-user data dir (repo root in a
+# source checkout). The example template it's seeded from is a shipped asset, so
+# it comes from the read-only bundle.
+CONFIG_PATH = data_dir() / "config.toml"
+_EXAMPLE_PATH = bundle_dir() / "config.example.toml"
 
 # Default model for a fresh machine. Same Qwen3 family the app is tuned for
 # (~2.5 GB, ~50 tok/s on Apple Silicon / a modern GPU). Override with the
 # LOCALCHAT_DEFAULT_MODEL env var if you want a different one.
 DEFAULT_MODEL = "huggingface:Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+
+
+def default_spec() -> str:
+    """The model to fetch on a fresh machine (env override, else DEFAULT_MODEL)."""
+    import os
+
+    return os.environ.get("LOCALCHAT_DEFAULT_MODEL") or DEFAULT_MODEL
 
 
 def _current_model_path() -> str | None:
@@ -50,8 +62,7 @@ def _write_model_path(path: str) -> None:
     doesn't exist yet (shouldn't happen — the launcher copies the template
     first), it is created from the example template."""
     if not CONFIG_PATH.exists():
-        example = ROOT / "config.example.toml"
-        CONFIG_PATH.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+        CONFIG_PATH.write_text(_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
 
     text = CONFIG_PATH.read_text(encoding="utf-8")
     # TOML on Windows: forward slashes are safest (backslashes are escapes in
@@ -102,14 +113,12 @@ def ensure_model() -> int:
     """Returns 0 if a usable model is configured (downloading one if needed),
     non-zero on failure. The launcher still starts the app on failure — the UI
     surfaces the model error and the user can set model_path by hand."""
-    import os
-
     existing = _current_model_path()
     if existing and Path(existing).is_file():
         print(f"[fetch_model] model already present: {existing}")
         return 0
 
-    spec = os.environ.get("LOCALCHAT_DEFAULT_MODEL") or DEFAULT_MODEL
+    spec = default_spec()
     print(f"[fetch_model] no local model found — downloading default ({spec}).")
     print("[fetch_model] this happens once (~2.5 GB) and is cached for next time.")
     try:
