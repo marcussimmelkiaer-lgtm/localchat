@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# LocalChat launcher for macOS / Linux. Mirrors run.bat.
+# LocalChat launcher for macOS / Linux. Mirrors run.bat. On a Mac, double-click
+# LocalChat.command instead (Finder opens .sh files in an editor).
 set -e
 cd "$(dirname "$0")"
 
@@ -58,7 +59,13 @@ if [ ! -x "venv/bin/python" ]; then
     fi
   fi
 
-  echo "Installing dependencies (this can take a few minutes the first time)..."
+fi
+
+# --- Dependencies: install on first run, and again whenever requirements.txt
+#     changes (e.g. after a git pull). venv/.requirements.installed is a copy of
+#     the requirements.txt that was last installed successfully.
+if ! cmp -s requirements.txt venv/.requirements.installed; then
+  echo "Installing dependencies (this can take a few minutes)..."
   if ! venv/bin/python -m pip install --upgrade pip; then
     echo
     echo "Failed to upgrade pip."
@@ -69,6 +76,7 @@ if [ ! -x "venv/bin/python" ]; then
     echo "Dependency installation failed."
     exit 1
   fi
+  cp requirements.txt venv/.requirements.installed
 fi
 
 # --- Config: create from template on first run ---

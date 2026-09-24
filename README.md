@@ -14,23 +14,38 @@ Everything runs locally — no cloud, no API keys.
 ## Requirements
 
 - macOS 11+ on Apple Silicon (M1–M5). (Also runs on Windows 10/11 x64.)
-- Python 3.11+ (`python3`) — required (the app uses the standard-library `tomllib`)
+- Git (to clone and update)
+- Python 3.11+ — required (the app uses the standard-library `tomllib`). On
+  Windows, `run.bat` offers to install it if missing; on macOS use e.g.
+  `brew install python@3.12` (Apple's built-in `python3` is 3.9).
 - GPU acceleration is automatic: **Metal** on macOS, Vulkan on Windows. Falls
   back to CPU.
 - A local GGUF chat model (see Configuration)
 
 ## Run
 
+Clone once, then double-click one file:
+
 ```
-chmod +x run.sh   # first time only
-./run.sh
+git clone <repo-url> localchat
 ```
+
+- **Windows:** double-click **`run.bat`**. If Python 3.11+ is missing it offers
+  to install it for you (via winget, no admin needed).
+- **macOS:** double-click **`LocalChat.command`** (or run `./run.sh` in Terminal).
 
 On first launch it creates a virtual environment, installs dependencies, copies
 `config.example.toml` to `config.toml`, and **downloads the default chat model**
 (Qwen3-4B, ~2.5 GB) into NobodyWho's local cache, wiring `model_path` for you.
-The download happens once and is reused on every later launch. (On Windows,
-double-click `run.bat` from the original folder.)
+The download happens once and is reused on every later launch. On Windows the
+setup window closes once the app opens.
+
+**Updating:** `git pull`, then launch as usual — changed dependencies are
+installed automatically.
+
+> Use `git clone` rather than GitHub's "Download ZIP": a downloaded ZIP is marked
+> as coming from the internet, so Windows/macOS security prompts kick in; a
+> clone isn't, and it's what makes `git pull` updates work.
 
 > First launch needs an internet connection for the model download. To use a
 > different model, set `model_path` in `config.toml` before the first run (the
