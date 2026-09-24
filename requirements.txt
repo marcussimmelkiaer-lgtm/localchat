@@ -1,4 +1,4 @@
-nobodywho>=1.5.0
+nobodywho==3.0.0
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sse-starlette>=2.1

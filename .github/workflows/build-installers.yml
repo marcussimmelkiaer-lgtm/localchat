@@ -44,6 +44,18 @@ jobs:
           chmod +x packaging/macos/build_mac.sh
           ./packaging/macos/build_mac.sh
 
+      # Run the app FROM THE BUILT .dmg on this clean runner: first-run model
+      # download (a tiny model, not the 2.5 GB default) + load + one chat reply.
+      # CPU only — runners have no usable GPU. See packaging/smoke_test.py.
+      - name: Smoke-test the .dmg (first-run download + chat)
+        env:
+          LOCALCHAT_DEFAULT_MODEL: huggingface:unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q3_K_M.gguf
+          LOCALCHAT_USE_GPU: "0"
+        run: |
+          hdiutil attach dist/LocalChat-arm64.dmg -nobrowse -mountpoint /Volumes/LocalChatSmoke
+          python packaging/smoke_test.py /Volumes/LocalChatSmoke/LocalChat.app/Contents/MacOS/LocalChat
+          hdiutil detach /Volumes/LocalChatSmoke
+
       - uses: actions/upload-artifact@v4 # Node 20; fine for artifact upload
         with:
           name: LocalChat-macos-arm64
@@ -73,6 +85,20 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: ./packaging/build_win.ps1 -SkipFrontend
+
+      # Silent-install the built Setup.exe on this clean runner, then run the
+      # INSTALLED app: first-run model download (tiny model) + load + one chat
+      # reply. CPU only. See packaging/smoke_test.py.
+      - name: Smoke-test the installer (first-run download + chat)
+        shell: pwsh
+        env:
+          LOCALCHAT_DEFAULT_MODEL: huggingface:unsloth/gemma-3-270m-it-GGUF/gemma-3-270m-it-Q3_K_M.gguf
+          LOCALCHAT_USE_GPU: "0"
+        run: |
+          $p = Start-Process dist/installer/LocalChat-Setup-x64.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited $($p.ExitCode)" }
+          python packaging/smoke_test.py "$env:LOCALAPPDATA\Programs\LocalChat\LocalChat.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v4
         with:

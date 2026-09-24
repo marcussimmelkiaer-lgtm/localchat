@@ -162,7 +162,18 @@ Root: `run.bat`, `run.sh` (macOS/Linux launcher, with the arm64 + Python-3.11+ f
   `LOCALCHAT_PORT`, `LOCALCHAT_USE_GPU`, `LOCALCHAT_ALLOW_THINKING`, `LOCALCHAT_DB_PATH`,
   `LOCALCHAT_NO_WINDOW`.
 
-## Verified NobodyWho 1.5.0 API (from introspecting the installed wheel)
+## Verified NobodyWho API (from introspecting the installed wheel)
+
+**Now pinned to `nobodywho==3.0.0`** (Sep 2026, user asked for the newest). `requirements.txt` used to say
+`>=1.5.0`, so CI silently built installers against 3.0.0 while everything had been tested on 1.5.0 — hence the
+exact pin: bump it deliberately and re-verify. 3.0.0 keeps every call the app makes source-compatible (`Model`,
+`Chat`, `SamplerPresets.*`, `set_chat_history`, `ask`, `stop_generation`, `Prompt`/`Text`/`Image`,
+`download_model` with `(downloaded, total)` progress, `get_cached_models`); verified on this machine: GPU text
+generation through the app + a vision `Prompt([Text, Image])` on Qwen2.5-VL-3B. New in 3.0 (unused so far):
+**MTP speculative decoding** (`Model(draft_model_path=...)` + `Chat(mtp=MtpConfig())` — relevant to the
+"Token throughput" notes below), `Chat(n_threads=...)`, `Model.max_ctx`, `model_path="auto"`, `Audio` prompt
+parts, `SpeechToText`/`TextToSpeech`. The notes below were written against 1.5.0 and still hold.
+
 
 Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vulkan; no build tools).
 
