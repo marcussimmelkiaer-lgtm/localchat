@@ -58,8 +58,16 @@ def _wait_healthz(proc, seconds: int) -> dict:
 def _wait_model(seconds: int) -> None:
     _json("POST", "/api/warmup")
     last = None
-    for _ in range(seconds):
-        h = _json("GET", "/healthz")
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            h = _json("GET", "/healthz")
+        except OSError as e:
+            # Loading the model holds the GIL, so the server can stall for a
+            # while (longest on a GPU-less CI runner). Keep polling.
+            print(f"[smoke] /healthz busy ({e}); retrying")
+            time.sleep(2)
+            continue
         if h["model_loaded"]:
             print("[smoke] model loaded")
             return
@@ -105,6 +113,7 @@ def _chat() -> None:
 
 def main() -> int:
     os.environ["LOCALCHAT_NO_WINDOW"] = "1"
+    os.environ["PYTHONUNBUFFERED"] = "1"  # so the app's output survives a kill
     log_path = Path(tempfile.gettempdir()) / "smoke_app.log"
     log = open(log_path, "w", encoding="utf-8")
     cmd = [str(Path(sys.argv[1]).resolve()), *sys.argv[2:]]

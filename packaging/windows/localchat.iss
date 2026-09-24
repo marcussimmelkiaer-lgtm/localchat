@@ -50,6 +50,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"
 
+[InstallDelete]
+; Upgrades: wipe the previous version's frozen libraries first. Inno never
+; removes files a new version no longer ships, so stale packages (e.g. an old
+; nobodywho-*.dist-info or .pyd) would pile up and could shadow the new ones.
+; User data lives in %LOCALAPPDATA%\LocalChat, not here, so nothing is lost.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 ; The frozen app (onedir output from PyInstaller).
 Source: "..\..\dist\LocalChat\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
