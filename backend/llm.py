@@ -306,8 +306,8 @@ class NobodyWhoEngine:
         persists model_path and /healthz reports progress. Returns True if a
         download is (now) running, in which case the caller must not try to load.
 
-        Source checkouts are untouched: run.sh / run.bat already ran fetch_model,
-        and a hand-set bad path should surface as an error, not a 2.5 GB fetch."""
+        Source checkouts are untouched: the launcher already ran fetch_model,
+        and a hand-set bad path should surface as an error, not a surprise fetch."""
         from . import paths
 
         if not paths.is_frozen() or self.current_model()["exists"]:

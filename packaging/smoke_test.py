@@ -1,6 +1,7 @@
 """End-to-end smoke test of a packaged LocalChat build (used by CI).
 
     python packaging/smoke_test.py <path-to-LocalChat-binary> [args...]
+    python packaging/smoke_test.py --running   # app already started (by a launcher)
 
 Launches the frozen app headless (LOCALCHAT_NO_WINDOW=1) on a clean machine and
 checks the whole first-run path a real user hits:
@@ -46,7 +47,7 @@ def _json(method: str, path: str, body: dict | None = None):
 
 def _wait_healthz(proc, seconds: int) -> dict:
     for _ in range(seconds):
-        if proc.poll() is not None:
+        if proc is not None and proc.poll() is not None:
             raise RuntimeError(f"app exited early with code {proc.returncode}")
         try:
             return _json("GET", "/healthz")
@@ -111,7 +112,22 @@ def _chat() -> None:
         raise RuntimeError(f"chat did not complete (status={status}, tokens={len(tokens)})")
 
 
+def _check_running() -> int:
+    """Check an app that something else started (e.g. Start LocalChat.*)."""
+    try:
+        print(f"[smoke] server up: {_wait_healthz(None, 600)}")
+        _wait_model(900)
+        _chat()
+        print("[smoke] PASS")
+        return 0
+    except Exception as e:  # noqa: BLE001
+        print(f"[smoke] FAIL: {e}")
+        return 1
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--running"]:
+        return _check_running()
     os.environ["LOCALCHAT_NO_WINDOW"] = "1"
     os.environ["PYTHONUNBUFFERED"] = "1"  # so the app's output survives a kill
     log_path = Path(tempfile.gettempdir()) / "smoke_app.log"

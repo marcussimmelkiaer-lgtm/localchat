@@ -3,6 +3,5 @@
 * text=auto
 
 *.sh   text eol=lf
-run.sh text eol=lf
 *.bat  text eol=crlf
 *.command text eol=lf

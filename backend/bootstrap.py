@@ -1,6 +1,6 @@
 """First-run setup for a packaged (frozen) build.
 
-A source checkout needs none of this — `run.sh` / `run.bat` copy config.toml and
+A source checkout needs none of this — the launcher copies config.toml and
 `fetch_model` downloads a model. But a double-click install has no launcher
 script and a read-only bundle. `bootstrap()` makes that first launch work:
 

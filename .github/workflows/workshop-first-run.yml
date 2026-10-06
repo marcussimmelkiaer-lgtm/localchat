@@ -1,0 +1,77 @@
+name: Workshop first run
+
+# Runs the real first-run path a workshop participant hits, on a clean machine
+# per OS: export the slim single-OS repo (packaging/export_workshop.py), run its
+# launcher (uv -> Python 3.12 -> packages -> default model download), then check
+# the started app loads the model and answers a chat message.
+#
+# Unlike the old run.sh smoke test, this downloads the REAL default model
+# (Qwen3-0.6B, ~640 MB). Runners have no usable GPU, so it runs on CPU.
+
+on:
+  push:
+    branches: [main, workshop-launchers]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  first-run:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14 # Apple Silicon (arm64)
+            target: mac
+          - os: windows-latest
+            target: windows
+    env:
+      LOCALCHAT_NO_WINDOW: "1"
+      LOCALCHAT_USE_GPU: "0"
+      LOCALCHAT_PORT: "8765"
+    steps:
+      - uses: actions/checkout@v5
+
+      # This Python only runs the export + check scripts. The launcher ignores
+      # it (UV_PYTHON_PREFERENCE=only-managed) and brings its own via uv.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Export the slim ${{ matrix.target }} repo
+        shell: bash
+        run: |
+          echo "SLIM=$RUNNER_TEMP/LocalChat" >> "$GITHUB_ENV"
+          python packaging/export_workshop.py ${{ matrix.target }} "$RUNNER_TEMP/LocalChat" --repo-url https://example.invalid/localchat.git
+
+      - name: Run the macOS launcher
+        if: matrix.target == 'mac'
+        shell: bash
+        working-directory: ${{ runner.temp }}/LocalChat
+        run: |
+          chmod +x "Start LocalChat.command"
+          "./Start LocalChat.command"
+
+      # Output goes to a file so the detached app doesn't hold the step's pipes.
+      - name: Run the Windows launcher
+        if: matrix.target == 'windows'
+        shell: cmd
+        working-directory: ${{ runner.temp }}/LocalChat
+        run: |
+          call "Start LocalChat.bat" > launcher.log 2>&1
+          set rc=%errorlevel%
+          type launcher.log
+          exit /b %rc%
+
+      - name: App loads the model and chats
+        shell: bash
+        run: python packaging/smoke_test.py --running
+
+      - name: Dump logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          cat "$SLIM/launcher.log" 2>/dev/null || true
+          cat "$SLIM/LocalChat.log" 2>/dev/null || true

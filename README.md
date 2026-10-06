@@ -13,44 +13,48 @@ Everything runs locally — no cloud, no API keys.
 
 ## Requirements
 
-- macOS 11+ on Apple Silicon (M1–M5). (Also runs on Windows 10/11 x64.)
-- Git (to clone and update)
-- Python 3.11+ — required (the app uses the standard-library `tomllib`). On
-  Windows, `run.bat` offers to install it if missing; on macOS use e.g.
-  `brew install python@3.12` (Apple's built-in `python3` is 3.9).
+- macOS 11+ on Apple Silicon (M1 or newer), or Windows 10/11 x64.
+- Git, to clone.
+- Nothing else. The launcher downloads a private Python 3.12 (via
+  [uv](https://docs.astral.sh/uv/)) into the folder; no admin rights needed.
 - GPU acceleration is automatic: **Metal** on macOS, Vulkan on Windows. Falls
   back to CPU.
-- A local GGUF chat model (see Configuration)
 
 ## Run
 
 Clone once, then double-click one file:
 
-```
-git clone <repo-url> localchat
-```
+- **Windows:** **`Start LocalChat.bat`**
+- **macOS:** **`Start LocalChat.command`**
 
-- **Windows:** double-click **`run.bat`**. If Python 3.11+ is missing it offers
-  to install it for you (via winget, no admin needed).
-- **macOS:** double-click **`LocalChat.command`** (or run `./run.sh` in Terminal).
+On first launch it downloads uv + Python 3.12 into `.uv/`, installs the
+dependencies into `venv/`, copies `config.example.toml` to `config.toml`, and
+**downloads the default chat model** (Qwen3-0.6B, ~640 MB) into NobodyWho's local
+cache. Bigger models are a click away in the app's **Models** picker. Later
+launches start straight away, offline. Dependencies are reinstalled whenever
+`requirements.txt` changes.
 
-On first launch it creates a virtual environment, installs dependencies, copies
-`config.example.toml` to `config.toml`, and **downloads the default chat model**
-(Qwen3-4B, ~2.5 GB) into NobodyWho's local cache, wiring `model_path` for you.
-The download happens once and is reused on every later launch. On Windows the
-setup window closes once the app opens.
-
-**Updating:** `git pull`, then launch as usual — changed dependencies are
-installed automatically.
+> A `.gguf` placed next to the launcher is used instead of downloading (handy for
+> handing the model out on a USB stick). To pick a different download, set
+> `LOCALCHAT_DEFAULT_MODEL` to another `huggingface:` / `https://` GGUF.
 
 > Use `git clone` rather than GitHub's "Download ZIP": a downloaded ZIP is marked
 > as coming from the internet, so Windows/macOS security prompts kick in; a
-> clone isn't, and it's what makes `git pull` updates work.
+> clone isn't.
 
-> First launch needs an internet connection for the model download. To use a
-> different model, set `model_path` in `config.toml` before the first run (the
-> download is skipped when a valid model is already configured), or set the
-> `LOCALCHAT_DEFAULT_MODEL` env var to another `huggingface:` / `https://` GGUF.
+### Workshop repos
+
+Workshop participants clone a slim, single-OS repo (one launcher + `backend/`)
+generated from this one, so the two never drift:
+
+```
+python packaging/export_workshop.py windows ../localchat-windows --repo-url <clone-url>
+python packaging/export_workshop.py mac     ../localchat-mac     --repo-url <clone-url>
+```
+
+Then commit + push in each target. `.github/workflows/workshop-first-run.yml`
+runs the exported launchers on clean macOS + Windows runners (real model
+download, CPU generation).
 
 ## Configuration (`config.toml`)
 
@@ -85,5 +89,5 @@ npm run build      # rebuild backend/static (commit the result)
 Run the backend (without the window) for API testing:
 
 ```
-LOCALCHAT_NO_WINDOW=1 venv/bin/python -m backend.main
+LOCALCHAT_NO_WINDOW=1 venv/bin/python -m backend.main   # Windows: venv\Scripts\python
 ```

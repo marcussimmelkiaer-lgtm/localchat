@@ -27,6 +27,15 @@ from pathlib import PurePath
 # (everything after the colon) also determines the on-disk cache sub-path.
 CATALOG = [
     {
+        # Like 1.7B below, the official 0.6B repo ships only Q8_0.
+        "id": "qwen3-0.6b",
+        "name": "Qwen3 0.6B",
+        "quant": "Q8_0",
+        "spec": "huggingface:Qwen/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf",
+        "size_gb": 0.64,
+        "note": "default / smallest",
+    },
+    {
         # NOTE: the official Qwen/Qwen3-1.7B-GGUF repo ships ONLY Q8_0 — it has no
         # Q4_K_M (unlike the 4B/8B repos). Pointing at a Q4_K_M here 404s and
         # NobodyWho raises "check that the owner repo and filename is correct".
@@ -37,7 +46,7 @@ CATALOG = [
         "quant": "Q8_0",
         "spec": "huggingface:Qwen/Qwen3-1.7B-GGUF/Qwen3-1.7B-Q8_0.gguf",
         "size_gb": 1.8,
-        "note": "fastest",
+        "note": "fast",
     },
     {
         "id": "qwen3-4b",
@@ -45,7 +54,7 @@ CATALOG = [
         "quant": "Q4_K_M",
         "spec": "huggingface:Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf",
         "size_gb": 2.5,
-        "note": "default / balanced",
+        "note": "balanced / file analysis",
     },
     {
         "id": "qwen3-8b",

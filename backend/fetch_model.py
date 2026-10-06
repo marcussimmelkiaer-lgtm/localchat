@@ -1,12 +1,15 @@
 """First-run model bootstrap.
 
 Ensures a usable local GGUF chat model exists and that `config.toml` points at
-it. Run once by the launcher (run.sh / run.bat) after dependencies install,
-before the app starts. Idempotent: if config.toml already names a model file
-that exists on disk, this is a no-op.
+it. Run once by the launcher (Start LocalChat.bat / .command) after dependencies
+install, before the app starts. Idempotent: if config.toml already names a model
+file that exists on disk, this is a no-op.
 
-The model is NOT committed to the repo (a 4B GGUF is ~2.5 GB — far over
-GitHub's limits). Instead it is downloaded once from Hugging Face into
+A `.gguf` placed next to the launcher (e.g. copied from a USB stick at a
+workshop) is adopted instead of downloading.
+
+The model is NOT committed to the repo (GGUFs are far over GitHub's file
+limits). Instead it is downloaded once from Hugging Face into
 NobodyWho's local cache (~/Library/Application Support/nobodywho/... on macOS,
 %LOCALAPPDATA%\\nobodywho\\... on Windows) and reused forever.
 """
@@ -26,10 +29,11 @@ from .paths import bundle_dir, data_dir
 CONFIG_PATH = data_dir() / "config.toml"
 _EXAMPLE_PATH = bundle_dir() / "config.example.toml"
 
-# Default model for a fresh machine. Same Qwen3 family the app is tuned for
-# (~2.5 GB, ~50 tok/s on Apple Silicon / a modern GPU). Override with the
-# LOCALCHAT_DEFAULT_MODEL env var if you want a different one.
-DEFAULT_MODEL = "huggingface:Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+# Default model for a fresh machine: the smallest Qwen3 (~640 MB), so a first
+# launch on shared Wi-Fi is quick. Bigger Qwen3s are one click away in the Models
+# picker (same family -> same chat template / thinking / sampler). The official
+# 0.6B GGUF repo ships only Q8_0. Override with LOCALCHAT_DEFAULT_MODEL.
+DEFAULT_MODEL = "huggingface:Qwen/Qwen3-0.6B-GGUF/Qwen3-0.6B-Q8_0.gguf"
 
 
 def default_spec() -> str:
@@ -109,6 +113,18 @@ def _on_progress(*args) -> None:
     print("\r[fetch_model] downloading...", end="", flush=True)
 
 
+def _sideloaded_model() -> str | None:
+    """A .gguf sitting next to the launcher (the repo root), if any.
+
+    Lets a workshop hand out the model on a USB stick: copy the folder plus the
+    .gguf and no download happens. Picks the largest file, so a stray mmproj
+    projector (always much smaller) is never chosen as the chat model."""
+    files = [p for p in data_dir().glob("*.gguf") if p.is_file()]
+    if not files:
+        return None
+    return str(max(files, key=lambda p: p.stat().st_size).resolve())
+
+
 def ensure_model() -> int:
     """Returns 0 if a usable model is configured (downloading one if needed),
     non-zero on failure. The launcher still starts the app on failure — the UI
@@ -118,9 +134,15 @@ def ensure_model() -> int:
         print(f"[fetch_model] model already present: {existing}")
         return 0
 
+    local = _sideloaded_model()
+    if local:
+        _write_model_path(local)
+        print(f"[fetch_model] using model next to the launcher: {local}")
+        return 0
+
     spec = default_spec()
     print(f"[fetch_model] no local model found — downloading default ({spec}).")
-    print("[fetch_model] this happens once (~2.5 GB) and is cached for next time.")
+    print("[fetch_model] this happens once and is cached for next time.")
     try:
         import nobodywho
 

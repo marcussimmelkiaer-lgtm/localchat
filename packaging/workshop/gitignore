@@ -1,0 +1,17 @@
+# Created by the launcher on first run.
+.uv/
+venv/
+config.toml
+LocalChat.log
+
+# The app's local data.
+*.db
+*.db-wal
+*.db-shm
+uploads/
+
+# Models are downloaded (or copied in from a USB stick), never committed.
+*.gguf
+
+__pycache__/
+*.pyc
