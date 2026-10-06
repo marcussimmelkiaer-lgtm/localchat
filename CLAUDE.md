@@ -410,8 +410,21 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    (`localchat-windows`, `localchat-mac`) and move to the company org once verified (re-export with the new
    `--repo-url`). CI: `.github/workflows/workshop-first-run.yml` (replaced `macos-first-run.yml`) exports +
    runs each launcher on `macos-14` / `windows-latest`, real 0.6B download, then
-   `packaging/smoke_test.py --running` (model load + one chat reply). Verified on this Windows machine from a
-   fresh export: uv + Python + deps in ~1 min, model load + chat reply.
+   `packaging/smoke_test.py --running` (model load + one chat reply). **Verified**: this Windows machine from a
+   fresh export (uv + Python + deps ~1 min, model load + chat reply); CI green on both `macos-14` and
+   `windows-latest` (real 0.6B download → load → reply); and **the user tested the Mac repo on a colleague's real
+   Apple Silicon Mac — "works well"** (Oct 6 2026). CI gotcha: the **Windows runner kills processes a step leaves
+   behind**, so on Windows the launcher and the smoke check must run in the SAME step (the Mac launcher's
+   `start_new_session` escapes this). Local-testing gotchas: test from a SHORT path (deep scratch paths hit
+   MAX_PATH even when deleting `.uv/python`), and PowerShell 5.1 `Set-Content -Encoding utf8` writes a BOM that
+   breaks `tomllib` — edit config files with Python/sed instead. Slim repos (private, user's account):
+   https://github.com/marcussimmelkiaer-lgtm/localchat-windows and .../localchat-mac, cloned locally as sibling
+   folders `../localchat-windows`, `../localchat-mac` (each with a local git identity set). **Workflow for
+   changes**: edit THIS repo → re-run `export_workshop.py` into the sibling clone → commit + push there; never
+   edit the slim repos directly. Dev work lives on branch `workshop-launchers` (pushed to the PUBLIC `origin`).
+   **Remaining before the workshop**: move the slim repos to the company org as **public** repos (professors
+   can't clone private ones) and re-export with the new `--repo-url`; email professors to install Git ahead of
+   time; prepare USB sticks (exFAT, folder + `Qwen3-0.6B-Q8_0.gguf`) as the fallback.
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
@@ -533,3 +546,8 @@ real generated files; attachment-column DB migration tested on an old-schema DB.
   issues. Signing deferred per user.
 - CURRENT STATE: everything above works on Windows; the outstanding work is the **macOS `.dmg` build/verify**
   and (whenever ready) **signing**.
+
+**Latest session (Oct 6 2026) — workshop distribution (decision #16):** installers were set aside for the
+workshop (no signing available). Professors `git clone` a slim per-OS repo and double-click `Start LocalChat.*`;
+the launcher bootstraps uv + Python 3.12, packages and the Qwen3-0.6B default model. Verified on Windows, in CI on
+both OSes, and on a real Mac. Next: move the slim repos to the company org (public) + re-export.
