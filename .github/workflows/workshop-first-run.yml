@@ -31,6 +31,7 @@ jobs:
       LOCALCHAT_NO_WINDOW: "1"
       LOCALCHAT_USE_GPU: "0"
       LOCALCHAT_PORT: "8765"
+      PYTHONUNBUFFERED: "1" # live smoke-test output in the log
     steps:
       - uses: actions/checkout@v5
 
@@ -54,8 +55,15 @@ jobs:
           chmod +x "Start LocalChat.command"
           "./Start LocalChat.command"
 
-      # Output goes to a file so the detached app doesn't hold the step's pipes.
-      - name: Run the Windows launcher
+      - name: App loads the model and chats
+        if: matrix.target == 'mac'
+        shell: bash
+        run: python packaging/smoke_test.py --running
+
+      # One step on Windows: the runner kills processes a step leaves behind
+      # when it ends, which would take the detached app down before the check.
+      # Launcher output goes to a file so the app doesn't hold the step's pipes.
+      - name: Run the Windows launcher, then the app loads the model and chats
         if: matrix.target == 'windows'
         shell: cmd
         working-directory: ${{ runner.temp }}/LocalChat
@@ -63,11 +71,8 @@ jobs:
           call "Start LocalChat.bat" > launcher.log 2>&1
           set rc=%errorlevel%
           type launcher.log
-          exit /b %rc%
-
-      - name: App loads the model and chats
-        shell: bash
-        run: python packaging/smoke_test.py --running
+          if not "%rc%"=="0" exit /b %rc%
+          python "%GITHUB_WORKSPACE%\packaging\smoke_test.py" --running
 
       - name: Dump logs on failure
         if: failure()
