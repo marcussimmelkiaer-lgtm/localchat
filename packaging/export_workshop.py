@@ -32,6 +32,9 @@ WORKSHOP = Path(__file__).resolve().parent / "workshop"
 
 LAUNCHERS = {"windows": "Start LocalChat.bat", "mac": "Start LocalChat.command"}
 
+# Text files written with LF endings (the slim repos have no .gitattributes).
+LF_TEXT = {".py", ".toml", ".txt", ".md", ".csv", ".command", ".html", ".js", ".css", ".json", ".svg"}
+
 # Shared runtime files (repo-relative). backend/ is added from `git ls-files`
 # so caches and local junk never leak into the export.
 COMMON = ["data/sales_2025.csv", "rag/employee_handbook.md"]
@@ -72,6 +75,12 @@ def export(target_os: str, out: Path, repo_url: str) -> None:
         if rel == "README.md":
             text = src.read_text(encoding="utf-8").replace("REPO_URL", repo_url)
             dst.write_text(text, encoding="utf-8", newline="\n")
+        elif src.suffix in LF_TEXT:
+            # Line endings as on a Mac/Linux checkout, whatever this machine's
+            # git settings made of the working copy (only the .bat keeps CRLF).
+            dst.write_bytes(src.read_bytes().replace(b"
+", b"
+"))
         else:
             shutil.copyfile(src, dst)
     print(f"exported {len(files)} files for {target_os} -> {out}")
