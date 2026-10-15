@@ -92,6 +92,13 @@ export function useChatStream(convo) {
             bufferRef.current += t
             scheduleFlush()
           },
+          onTool: (call) => {
+            // Each call arrives twice (running, then done/error): upsert by id.
+            convoRef.current.updateMessage(convId, assistantId, (m) => {
+              const calls = (m.toolCalls || []).filter((c) => c.id !== call.id)
+              return { toolCalls: [...calls, call].sort((a, b) => a.id - b.id) }
+            })
+          },
           onStats: (stats) => {
             convoRef.current.updateMessage(convId, assistantId, { stats })
           },
@@ -183,7 +190,13 @@ export function useChatStream(convo) {
     while (i >= 0 && msgs[i].role !== 'assistant') i--
     if (i < 0) return
     const assistantId = msgs[i].id
-    c.updateMessage(convId, assistantId, { content: '', status: 'streaming', stats: null, error: null })
+    c.updateMessage(convId, assistantId, {
+      content: '',
+      status: 'streaming',
+      stats: null,
+      error: null,
+      toolCalls: [],
+    })
     await run({ convId, content: '', regenerate: true, assistantId, priorMessages: msgs })
   }, [run])
 

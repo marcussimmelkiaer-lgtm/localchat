@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Markdown from './Markdown'
 import ThinkingBlock from './ThinkingBlock'
+import ToolCallsBlock from './ToolCallsBlock'
 import TokensPerSec from './TokensPerSec'
 import { CopyIcon, CheckIcon, RegenerateIcon, FileIcon } from './icons'
 
@@ -108,6 +109,7 @@ export default function Message({ message, isLast, onRegenerate }) {
   // assistant
   const streaming = message.status === 'streaming'
   const { thinking, answer, thinkingDone } = splitThinking(message.content || '')
+  const toolCalls = message.toolCalls || []
   const showLoading = streaming && !message.content
   const answerCaret = streaming && (thinking === null || thinkingDone)
 
@@ -128,12 +130,17 @@ export default function Message({ message, isLast, onRegenerate }) {
       </div>
       <div className="min-w-0 flex-1">
         {showLoading ? (
-          <LoadingDots />
+          <>
+            <ToolCallsBlock calls={toolCalls} />
+            <LoadingDots />
+          </>
         ) : (
           <>
             {thinking !== null && (
               <ThinkingBlock text={thinking} streaming={streaming && !thinkingDone} />
             )}
+            {/* The model thinks, then calls tools, then answers. */}
+            <ToolCallsBlock calls={toolCalls} />
             {(thinking === null || thinkingDone || answer) && (
               <div className={answerCaret ? 'caret' : undefined}>
                 <Markdown content={answer} streaming={streaming} />

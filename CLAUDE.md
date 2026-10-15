@@ -105,6 +105,8 @@ Backend (`backend/`):
   PDF (`pypdf`), `.xlsx` (`openpyxl`), `.xls` (`xlrd`), `.docx` (`python-docx`); caps each file at
   `MAX_CHARS_PER_FILE` (8000) with a truncation marker; never raises (bad/unsupported/empty → a short
   bracketed note). `fold_content(content, attachments)` builds the model-facing prompt text.
+- `tools.py` / `tool_support.py` — optional model tools (time, weather, Wikipedia, pandas), off by
+  default, switched in `config.toml [tools]`; see decision #17.
 - `sessions.py` — `SessionRegistry`: LRU cache of one `Chat` per conversation, sharing the `Model`.
 - `store.py` — SQLite (WAL) conversations + messages; one short-lived connection per op. Messages have
   an `attachments TEXT` column (JSON metadata incl. extracted `text`; additive `ALTER TABLE` migration
@@ -425,6 +427,33 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    **Remaining before the workshop**: move the slim repos to the company org as **public** repos (professors
    can't clone private ones) and re-export with the new `--repo-url`; email professors to install Git ahead of
    time; prepare USB sticks (exFAT, folder + `Qwen3-0.6B-Q8_0.gguf`) as the fallback.
+
+17. **Optional tools (function calling), all OFF by default** (Oct 2026, for the workshop's "see how the model
+   behaves" goal). `backend/tools.py` is the learner-facing file: plain functions decorated with
+   `@tool(description, params=...)` + a `TOOLS = {switch_name: [functions]}` registry; switches live in
+   `config.toml` `[tools]` (`time`, `weather`, `wikipedia`, `pandas`; `Config.tools`). Tools: local/city time
+   (Open-Meteo geocoding → IANA tz → `zoneinfo`; **`tzdata` added** because Windows has no tz database), weather
+   (Open-Meteo, no API key), Wikipedia intro (MediaWiki API via stdlib `urllib`, needs a User-Agent), and pandas
+   (`list_data_files` / `describe_table` / `calculate(file, column, operation, group_by)` over CSV/Excel in
+   `ROOT/data/`, path-confined via `Path(name).name`; example `data/sales_2025.csv`, exported to the slim repos).
+   **`pandas` added to requirements**, imported lazily inside the tools. `backend/tool_support.py` = plumbing:
+   its `tool` wraps `nobodywho.tool` to (a) report each call (`running` then `done`/`error`) to a module-global
+   listener and (b) turn exceptions into `"Error: ..."` results for the model. **Gotchas (verified on 3.0.0)**:
+   `nobodywho.tool` reads the function's own signature/annotations — a plain `functools.wraps` wrapper exposes
+   *no* params, so the wrapper sets `__signature__` and real-type `__annotations__` (`eval_str=True`; string
+   annotations from `from __future__ import annotations` crash it). Tools run on a **NobodyWho thread**
+   (`Dummy-N`), not the token-loop thread — hence the global listener set/cleared in `llm.stream(on_tool=...)`,
+   which the route feeds into its SSE queue as `event: tool` (live "Using tool…" while the call runs). The raw
+   tool-call markup is **never streamed** (NobodyWho handles the loop inside `ask()`; only the final answer
+   streams). Calls are persisted in a new `messages.tool_calls` JSON column (additive migration) →
+   `MessageOut.tool_calls` → `ToolCallsBlock.jsx` (collapsible "Used tool: name(args)", shows what the model
+   asked for + what came back; between thinking and answer). History rebuild stays text-only (tool turns aren't
+   replayed). **Verified headless end-to-end on GPU** (4B: all four tools, events streamed + persisted; tools-off
+   baseline invents a time; 0.6B uses the time tool but skips weather/Wikipedia). Tool descriptions and error
+   messages are prompt engineering: `max` vs `sum` confusion was fixed by describing operations, and a
+   wrong-column error that says "Call calculate again with one of these" makes the 4B self-correct.
+   **Found while testing (not fixed)**: Qwen3-4B + `n_ctx=16384` + `max_live_chats=3` OOMs the 8 GB GPU on the
+   third conversation in a session ("Could not create context") — each cached Chat reserves its own KV cache.
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 

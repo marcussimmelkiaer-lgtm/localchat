@@ -36,6 +36,21 @@ The default model is small so it downloads quickly. For better answers,
 especially when analysing uploaded spreadsheets or PDFs, click **Models** at the
 bottom of the sidebar and download **Qwen3 4B**.
 
+## Experiment: change how the model behaves
+
+Everything you can tweak is in **`config.toml`** in the LocalChat folder (it's
+created on the first start). Open it in any text editor, change a value, save,
+and restart LocalChat. Each setting is explained in the file:
+
+- **System prompt**: the model's standing instructions (its role, tone, rules).
+- **Temperature**: how predictable or creative the answers are.
+- **Thinking**: let the model reason step by step before it answers.
+- **Tools**: let the model call Python functions to get the time, the weather,
+  a Wikipedia article, or exact numbers from a spreadsheet in the `data` folder.
+  They're all off at first, so ask a question, switch the tool on, and ask
+  again. The tools themselves are in `backend/tools.py`, which also shows how
+  to write your own.
+
 ## If something goes wrong
 
 - **"Setup did not finish"**: check the internet connection and double-click

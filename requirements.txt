@@ -8,3 +8,7 @@ openpyxl>=3.1
 python-docx>=1.1
 xlrd>=2.0
 Pillow>=10.0
+# Optional tools (backend/tools.py): spreadsheet maths + time-zone data
+# (Windows has no built-in time-zone database).
+pandas>=2.2
+tzdata>=2024.1

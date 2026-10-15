@@ -46,6 +46,7 @@ def init_db(path: str) -> None:
                     stats TEXT,
                     error TEXT,
                     attachments TEXT NOT NULL DEFAULT '[]',
+                    tool_calls TEXT NOT NULL DEFAULT '[]',
                     ord INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
@@ -59,6 +60,8 @@ def init_db(path: str) -> None:
             cols = {r["name"] for r in c.execute("PRAGMA table_info(messages)").fetchall()}
             if "attachments" not in cols:
                 c.execute("ALTER TABLE messages ADD COLUMN attachments TEXT NOT NULL DEFAULT '[]'")
+            if "tool_calls" not in cols:
+                c.execute("ALTER TABLE messages ADD COLUMN tool_calls TEXT NOT NULL DEFAULT '[]'")
 
 
 @contextmanager
@@ -97,6 +100,13 @@ def _row_to_msg(r: sqlite3.Row) -> dict:
             attachments = json.loads(raw_att) or []
         except Exception:  # noqa: BLE001
             attachments = []
+    tool_calls: list[dict] = []
+    raw_tools = r["tool_calls"] if "tool_calls" in r.keys() else None
+    if raw_tools:
+        try:
+            tool_calls = json.loads(raw_tools) or []
+        except Exception:  # noqa: BLE001
+            tool_calls = []
     return {
         "id": r["id"],
         "role": r["role"],
@@ -107,6 +117,7 @@ def _row_to_msg(r: sqlite3.Row) -> dict:
         # Full metadata incl. extracted `text` (used by prompt_from_store);
         # MessageOut strips `text`/`data` before it reaches the UI.
         "attachments": attachments,
+        "tool_calls": tool_calls,
         "created_at": r["created_at"],
     }
 
@@ -210,6 +221,7 @@ def add_message(
         "stats": stats,
         "error": error,
         "attachments": attachments or [],
+        "tool_calls": [],
         "created_at": ts,
     }
 
@@ -220,6 +232,7 @@ def update_message(
     status: str | None = None,
     stats: dict | None = None,
     error: str | None = None,
+    tool_calls: list[dict] | None = None,
 ) -> None:
     sets, params = [], []
     if content is not None:
@@ -234,6 +247,9 @@ def update_message(
     if error is not None:
         sets.append("error=?")
         params.append(error)
+    if tool_calls is not None:
+        sets.append("tool_calls=?")
+        params.append(json.dumps(tool_calls, default=str))
     if not sets:
         return
     params.append(msg_id)

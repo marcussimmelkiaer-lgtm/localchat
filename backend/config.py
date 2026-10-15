@@ -30,6 +30,8 @@ class Config:
     allow_thinking: bool = False
     sampler: dict = field(default_factory=lambda: {"preset": "temperature", "temperature": 0.7})
     max_live_chats: int = 3
+    # [tools] switches from config.toml, e.g. {"weather": True}. See backend/tools.py.
+    tools: dict = field(default_factory=dict)
     db_path: str = str((ROOT / "localchat.db").resolve())
 
 
@@ -65,6 +67,8 @@ def load_config() -> Config:
         cfg.db_path = data["db_path"]
     if isinstance(data.get("sampler"), dict):
         cfg.sampler = data["sampler"]
+    if isinstance(data.get("tools"), dict):
+        cfg.tools = data["tools"]
 
     env = os.environ
     if env.get("LOCALCHAT_MODEL_PATH"):

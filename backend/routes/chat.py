@@ -58,7 +58,9 @@ async def regenerate(req: RegenerateRequest, request: Request):
         raise HTTPException(status_code=404, detail="conversation not found")
     # Reset the existing assistant message; llm.prompt_from_store re-derives the
     # last user prompt and prior history, so this re-answers the last user turn.
-    store.update_message(req.assistant_message_id, content="", status="streaming", error="")
+    store.update_message(
+        req.assistant_message_id, content="", status="streaming", error="", tool_calls=[]
+    )
     return _sse(request, req.conversation_id, req.assistant_message_id)
 
 
@@ -82,10 +84,13 @@ def _sse(request: Request, conv_id: str, assistant_id: str):
     app.state.stops[conv_id] = stop_event
     acc: list[str] = []
     state = {"stats": None, "error": None}
+    # Tool calls by id; each call is reported twice (running, then done/error).
+    tool_calls: dict[int, dict] = {}
 
     def worker():
         try:
-            for kind, data in engine.stream(conv_id, stop_event):
+            on_tool = lambda call: q.put(("tool", call))  # noqa: E731
+            for kind, data in engine.stream(conv_id, stop_event, on_tool=on_tool):
                 q.put((kind, data))
         except Exception as e:  # noqa: BLE001
             q.put(("error", str(e)))
@@ -105,6 +110,9 @@ def _sse(request: Request, conv_id: str, assistant_id: str):
                 elif kind == "stats":
                     state["stats"] = data
                     yield {"event": "stats", "data": json.dumps(data)}
+                elif kind == "tool":
+                    tool_calls[data["id"]] = data
+                    yield {"event": "tool", "data": json.dumps(data, default=str)}
                 elif kind == "error":
                     state["error"] = data
                     yield {"event": "error", "data": json.dumps({"message": data})}
@@ -118,6 +126,7 @@ def _sse(request: Request, conv_id: str, assistant_id: str):
                 status=status,
                 stats=state["stats"],
                 error=state["error"],
+                tool_calls=list(tool_calls.values()),
             )
             store.touch_conversation(conv_id)
             yield {"event": "done", "data": json.dumps({"status": status})}
@@ -129,7 +138,11 @@ def _sse(request: Request, conv_id: str, assistant_id: str):
             except Exception:  # noqa: BLE001
                 pass
             store.update_message(
-                assistant_id, content="".join(acc), status="stopped", stats=state["stats"]
+                assistant_id,
+                content="".join(acc),
+                status="stopped",
+                stats=state["stats"],
+                tool_calls=list(tool_calls.values()),
             )
             store.touch_conversation(conv_id)
             raise

@@ -9,10 +9,13 @@ from . import store
 from .config import Config
 from .files import fold_content
 from .sessions import SessionRegistry
+from .tool_support import enabled_tools, set_listener
 
 # The engine yields a stream of events to the route's worker thread:
 #   ("token", str) | ("stats", dict) | ("error", str)
-# The route turns these into SSE frames and persists the result.
+# The route turns these into SSE frames and persists the result. Tool calls
+# arrive separately, through the `on_tool` callback (they run on NobodyWho's
+# own thread while the token loop is blocked waiting for the next token).
 Event = Tuple[str, object]
 
 
@@ -375,6 +378,9 @@ class NobodyWhoEngine:
         sampler = self._build_sampler()
         if sampler is not None:
             kwargs["sampler"] = sampler
+        tools = enabled_tools(self.cfg.tools)
+        if tools:
+            kwargs["tools"] = tools
         return nobodywho.Chat(model, **kwargs)
 
     def stop(self, conv_id: str) -> None:
@@ -485,7 +491,7 @@ class NobodyWhoEngine:
             parts.append(nobodywho.Image(p))
         return nobodywho.Prompt(parts)
 
-    def stream(self, conv_id: str, stop_event: threading.Event) -> Iterator[Event]:
+    def stream(self, conv_id: str, stop_event: threading.Event, on_tool=None) -> Iterator[Event]:
         prefix, prompt, image_paths = prompt_from_store(conv_id)
 
         # An image turn borrows the vision model (loaded here, before we build the
@@ -519,6 +525,7 @@ class NobodyWhoEngine:
                     t0 = time.perf_counter()
                     first = None
                     count = 0
+                    set_listener(on_tool)
                     try:
                         response = chat.ask(self._build_prompt(prompt, image_paths))
                         for token in response:
@@ -538,6 +545,7 @@ class NobodyWhoEngine:
                             return
                     yield ("stats", _stats(t0, first, count))
                 finally:
+                    set_listener(None)
                     self._active.pop(conv_id, None)
         finally:
             if restore_after:

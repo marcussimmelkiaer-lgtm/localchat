@@ -10,6 +10,7 @@
 // Callbacks:
 //   onToken(text)
 //   onStats({ tokens, seconds, tokensPerSecond, ttftMs })
+//   onTool({ id, name, args, status: 'running' | 'done' | 'error', result })
 //   onDone({ status: 'done' | 'stopped' })
 //   onError(message)
 
@@ -54,7 +55,7 @@ export async function sendMessage(payload, handlers) {
   await parseSse(res.body, handlers, signal)
 }
 
-async function parseSse(stream, { onToken, onStats, onDone, onError }, signal) {
+async function parseSse(stream, { onToken, onStats, onTool, onDone, onError }, signal) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
   let buf = ''
@@ -72,6 +73,8 @@ async function parseSse(stream, { onToken, onStats, onDone, onError }, signal) {
     }
     if (event === 'token') {
       onToken?.(typeof data === 'string' ? data : data?.text ?? '')
+    } else if (event === 'tool') {
+      if (data && typeof data === 'object') onTool?.(data)
     } else if (event === 'stats') {
       onStats?.(normalizeStats(data || {}))
     } else if (event === 'done') {

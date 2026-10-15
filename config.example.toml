@@ -87,3 +87,32 @@ temperature = 0.7
 #   "default" the model's built-in sampler settings
 # top_k = 40
 # top_p = 0.95
+
+
+# ============================================================================
+#  TOOLS: let the model use Python functions (all OFF by default)
+# ============================================================================
+# A language model only knows what it learned in training: it can't tell the
+# time, check the weather, or reliably add up a spreadsheet. A "tool" is a
+# Python function it may ask the app to run. It then answers using the result.
+# The tools themselves live in backend/tools.py, which also explains how to
+# add your own.
+#
+# Try this: ask a question below with the tool OFF (the model guesses or
+# refuses), then set it to true, restart, and ask again. A "Used tool" box
+# above the answer shows what the model asked for and what it got back.
+#
+#   time       "What time is it in Tokyo?"
+#   weather    "Do I need an umbrella in Copenhagen today?"   (needs internet)
+#   wikipedia  "Who was Niels Bohr?"                          (needs internet)
+#   pandas     "Which region had the highest revenue in sales_2025.csv?"
+#              (reads CSV/Excel files in the `data` folder; an example is included)
+#
+# Small models (the default 0.6B) sometimes skip a tool or pass the wrong
+# input. Qwen3 4B (Models button in the app) is much more reliable with tools.
+
+[tools]
+time = false
+weather = false
+wikipedia = false
+pandas = false

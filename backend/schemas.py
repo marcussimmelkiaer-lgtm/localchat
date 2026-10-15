@@ -29,6 +29,15 @@ class AttachmentMeta(BaseModel):
     is_image: bool = False
 
 
+class ToolCallOut(BaseModel):
+    """One tool the model called while writing this message (see backend/tools.py)."""
+    id: int = 0
+    name: str
+    args: dict = {}
+    status: str = "done"  # running | done | error
+    result: str = ""
+
+
 class MessageOut(BaseModel):
     id: str
     role: str
@@ -37,6 +46,7 @@ class MessageOut(BaseModel):
     stats: Optional[Stats] = None
     error: Optional[str] = None
     attachments: list[AttachmentMeta] = []
+    tool_calls: list[ToolCallOut] = []
     created_at: str
 
 

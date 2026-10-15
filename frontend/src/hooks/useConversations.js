@@ -44,6 +44,7 @@ function normMsg(m) {
       : null,
     error: m.error || null,
     attachments: Array.isArray(m.attachments) ? m.attachments : [],
+    toolCalls: Array.isArray(m.tool_calls) ? m.tool_calls : [],
   }
 }
 
