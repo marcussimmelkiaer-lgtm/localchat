@@ -57,7 +57,12 @@ def _wait_healthz(proc, seconds: int) -> dict:
 
 
 def _wait_model(seconds: int) -> None:
-    _json("POST", "/api/warmup")
+    try:
+        _json("POST", "/api/warmup")
+    except OSError as e:
+        # The load it starts can grab the GIL before this response is sent;
+        # the load still runs, so carry on and poll /healthz below.
+        print(f"[smoke] /api/warmup slow to answer ({e}); polling anyway")
     last = None
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
