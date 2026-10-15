@@ -151,6 +151,9 @@ replaced `run.bat`/`run.sh`/`LocalChat.command`; older notes in this file still 
 `config.toml` (gitignored, real config), `config.example.toml`, `requirements.txt`, `.gitignore`,
 `.gitattributes` (pins `*.command`/`*.sh`=LF, `*.bat`=CRLF), `README.md`,
 `.github/workflows/workshop-first-run.yml`. Workshop export: `packaging/export_workshop.py` + `packaging/workshop/`.
+`data/sales_2025.csv` (pandas tool example) and `rag/employee_handbook.md` (RAG example, fictional) are exported too.
+Frontend additions (Oct 15): `components/ToolCallsBlock.jsx` (Using/Used tool box), `lib/math.js` (maths
+normalizer for KaTeX).
 
 ## How to run / dev workflow
 
@@ -161,8 +164,8 @@ replaced `run.bat`/`run.sh`/`LocalChat.command`; older notes in this file still 
   `../backend/static/`, which is what the app serves. **Always rebuild after frontend changes.**
 - **Backend headless (for testing without the window)**: set `LOCALCHAT_NO_WINDOW=1`, then
   `venv\Scripts\python -m backend.main`. Then hit `http://127.0.0.1:8765`.
-- **Config** (`config.toml`): `model_path`, `port`, `n_ctx`, `use_gpu`, `allow_thinking`,
-  `system_prompt`, `max_live_chats`, `[sampler]`. Env overrides: `LOCALCHAT_MODEL_PATH`,
+- **Config** (`config.toml`): `model_path`, `port`, `n_ctx`, `use_gpu`, `allow_thinking`, `file_uploads`,
+  `system_prompt`, `max_live_chats`, `[sampler]`, `[tools]` (`time`/`weather`/`wikipedia`/`pandas`/`rag`). Env overrides: `LOCALCHAT_MODEL_PATH`,
   `LOCALCHAT_PORT`, `LOCALCHAT_USE_GPU`, `LOCALCHAT_ALLOW_THINKING`, `LOCALCHAT_DB_PATH`,
   `LOCALCHAT_NO_WINDOW`.
 
@@ -422,8 +425,12 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    breaks `tomllib` — edit config files with Python/sed instead. Slim repos (private, user's account):
    https://github.com/marcussimmelkiaer-lgtm/localchat-windows and .../localchat-mac, cloned locally as sibling
    folders `../localchat-windows`, `../localchat-mac` (each with a local git identity set). **Workflow for
-   changes**: edit THIS repo → re-run `export_workshop.py` into the sibling clone → commit + push there; never
-   edit the slim repos directly. Dev work lives on branch `workshop-launchers` (pushed to the PUBLIC `origin`).
+   changes**: edit THIS repo → export → commit + push in each sibling clone; never edit the slim repos directly.
+   **⚠️ Don't export straight into the clones**: `export_workshop.py` deletes EVERYTHING except `.git` in its
+   target, which would wipe the local `localchat-windows` clone's `venv/`, `config.toml` and chat DB. Instead
+   (done this way all of Oct 15): export to a temp dir, then in each clone `git rm` tracked files missing from
+   the export, copy the export over, `git add` exactly the exported file list (`--chmod=+x` for the mac
+   `Start LocalChat.command`), commit, push. For a one-file change, copying that file + commit is enough. Dev work lives on branch `workshop-launchers` (pushed to the PUBLIC `origin`).
    **Remaining before the workshop**: move the slim repos to the company org as **public** repos (professors
    can't clone private ones) and re-export with the new `--repo-url`; email professors to install Git ahead of
    time; prepare USB sticks (exFAT, folder + `Qwen3-0.6B-Q8_0.gguf`) as the fallback.
@@ -472,8 +479,25 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    tools on it under-triggers on generic-sounding questions; the 0.6B never called it. **Lesson**: a concrete
    example in a `params` description gets copied verbatim as the argument by small models — keep params
    generic. Python's sqlite3 has FTS5 (verified) if a no-model keyword fallback is ever wanted.
+   **Later fixes (Oct 15)**: `search_documents` names files that yielded no text ("Scanned documents need OCR
+   first") — a user's scanned PDF (Konica Minolta copier, image-only pages) silently produced 0 chunks and
+   looked "not recognized". **Multiple `<think>` blocks**: with thinking on, Qwen3 thinks, calls the tool, then
+   emits a SECOND `<think>` block before answering; `Message.jsx splitThinking` now collects every block into the
+   one ThinkingBlock (joined by `---`); previously the second showed as raw `<think>` text.
    **Found while testing (not fixed)**: Qwen3-4B + `n_ctx=16384` + `max_live_chats=3` OOMs the 8 GB GPU on the
    third conversation in a session ("Could not create context") — each cached Chat reserves its own KV cache.
+
+18. **Learner-facing `config.toml`** (Oct 15 2026; the workshop goal is "play with the code to see how the model
+   behaves"). `config.example.toml` was rewritten in plain language with headed sections, in this order:
+   SYSTEM PROMPT (now a **single-line `"..."` string**, user request: no triple quotes; bullets became one
+   paragraph; comment says use `'` for inner quotes), THINKING, FILE UPLOADS (`file_uploads`), technical
+   settings, TEMPERATURE (`[sampler]`, with a 0 → 2 scale explanation and an "ask the same question at 0.0 and
+   1.5" experiment; other presets under "Advanced"; only ONE preset applies), TOOLS (`[tools]`, each switch with
+   a try-this question). TOML tables must come last, so `[sampler]` then `[tools]` close the file. The launcher
+   only copies the template when `config.toml` is missing, so **existing installs keep their old file**; the
+   user's two local configs were regenerated by hand preserving `model_path`/`allow_thinking`/tool switches
+   (old copies left as untracked `config.toml.bak`). The workshop READMEs got an "Experiment" section pointing at
+   `config.toml` and `backend/tools.py`.
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
@@ -545,8 +569,20 @@ keeping the model + maxed GPU + ruling out speculative decoding ⇒ effectively 
     Open / `xattr -dr com.apple.quarantine`). Wire the stubbed `codesign`/`notarytool` block in `build_mac.sh` and
     a `signtool` step in `build_win.ps1` once the NobodyWho Apple Developer + Authenticode certs exist.
   - **Hosting**: installers are now small enough for GitHub release assets.
-- **No LaTeX rendering**: Qwen3 sometimes emits `$...$` / `$$...$$`; the markdown renderer shows it raw.
-  Could add `remark-math` + KaTeX.
+- **LaTeX rendering**: **DONE** (KaTeX, decision #17 follow-ups). Heuristic currency escaping (`$5`) could
+  mis-handle odd maths like `$2 + 3$`.
+- **GPU OOM with 4B + 3 cached chats**: Qwen3-4B, `n_ctx=16384`, `max_live_chats=3` → the third conversation in a
+  session fails "Could not create context" on the 8 GB 4070. Not fixed; `max_live_chats = 1` or `n_ctx = 8192`
+  avoids it. Workshop Macs (unified memory) / CPU laptops are probably fine but unverified.
+- **Tool/RAG reliability is model-bound**: the 0.6B default rarely calls tools (never called RAG); the 4B is good
+  but not deterministic at temperature 0.7, under-triggers RAG on generic-sounding questions when all 5 tools are
+  on, and can misread a correct passage (said "you can fly" Aarhus→Copenhagen despite the <4 h train rule).
+  Possible levers: per-tool system-prompt hints, fewer tools on at once, lower temperature.
+- **RAG**: index is in-memory (rebuilt per restart; fine for a handful of docs, ~7 ms/chunk); no OCR for scanned
+  PDFs (options: OCR before adding, Tesseract, or the borrowed vision model; user hasn't decided); `.xlsx`/`.csv`
+  aren't RAG document types (the pandas tool covers spreadsheets).
+- **CI scope**: `workshop-first-run.yml` (both OSes) proves install + model load + one chat reply only. Tools,
+  RAG, maths, upload switch, and thinking/tool UI are verified by hand on Windows only, **never on a Mac**.
 - **Fullscreen** works (title-bar button + Esc, via `SetWindowPos` bounds swap — see gotchas/decision #3).
   There's still no free-floating *resize* toggle (the window stays at working-area or full-screen bounds).
 - **History fidelity**: each turn rebuilds the Chat's history from SQLite via `set_chat_history`
@@ -556,6 +592,11 @@ keeping the model + maxed GPU + ruling out speculative decoding ⇒ effectively 
   multimodal chat *history* (only the current turn's image is passed; prior images degrade to an
   `[Image: name]` placeholder — needs NobodyWho image-history support), surfacing vision-download progress
   during a chat (today only in the Models modal), and OCR for scanned PDFs/images (Tesseract).
+- **Unrelated uncommitted work in this repo** (not from the Oct 15 session; leave alone unless asked): modified
+  `packaging/localchat.spec`, untracked `nbw_cpu_infer.py`, `packaging/assets/`, `packaging/build_msix.ps1`,
+  `packaging/make_icons.py`, `packaging/windows/AppxManifest.xml`, `packaging/windows/msix-identity.json`,
+  `packaging/windows/msix/` (an MSIX packaging experiment), plus local test files `rag/Schumpeter.pdf` and
+  `config.toml.bak` (also in `../localchat-windows`).
 - The repo also contains an unrelated `../github-dashboard` project — not part of LocalChat.
 
 ## Status (current)
@@ -600,3 +641,23 @@ real generated files; attachment-column DB migration tested on an old-schema DB.
 workshop (no signing available). Professors `git clone` a slim per-OS repo and double-click `Start LocalChat.*`;
 the launcher bootstraps uv + Python 3.12, packages and the Qwen3-0.6B default model. Verified on Windows, in CI on
 both OSes, and on a real Mac. Next: move the slim repos to the company org (public) + re-export.
+
+**Latest session (Oct 15 2026): "play with the model" features (decisions #17, #18):**
+- Plain-language `config.toml` with explanations (system prompt one-line string, temperature guide, thinking,
+  `file_uploads` switch, `[tools]` switches).
+- Optional tools in `backend/tools.py` (all off by default): time, weather (Open-Meteo), Wikipedia, pandas over
+  `data/`, and a minimal dependency-free RAG over `rag/`. Live "Using tool…" / "Used tool" box in the chat,
+  persisted per message. Requirements gained `pandas` + `tzdata` (first launch after updating needs internet).
+- KaTeX maths rendering; every `<think>` block shown (thinking + tools); upload paperclip switchable.
+- CI smoke test made tolerant of a slow `/api/warmup` (a macOS run had flaked on it).
+- Everything committed and pushed: this repo on `workshop-launchers` (last code commit `5718e3e`), slim repos on
+  `main` (`localchat-windows` `b5f2648`, `localchat-mac` `788bf8e`); CI green on both OSes.
+- The user's local `config.toml` has time/weather/wikipedia/pandas **on**, `rag` off, `allow_thinking = true`.
+
+**Where we left off / next steps:**
+1. Try the new features on a **real Mac** (only Windows was tested by hand).
+2. Decide on the 4B OOM (`max_live_chats`/`n_ctx` defaults) and whether to add OCR for scanned PDFs.
+3. Still open from Oct 6: move the slim repos to the company org as **public**, re-export with the new
+   `--repo-url`; email professors to install Git; prepare USB sticks.
+4. Ideas raised but not built: "also add uploads to the rag folder" switch; saving the RAG index to disk;
+   a keyword-search (SQLite FTS5) fallback for comparison; extending CI to exercise a tool.
