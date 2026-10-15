@@ -454,9 +454,7 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    wrong-column error that says "Call calculate again with one of these" makes the 4B self-correct.
    **Follow-ups (same day)**: (a) the "Using tool…" state (spinner) is held on screen ≥1.2 s
    (`MIN_TOOL_RUNNING_MS` in `useChatStream`) because fast tools send running+done in one SSE chunk and React
-   batched them, so it was never visible; (b) the route inserts a `
-
-` token when a tool starts after some
+   batched them, so it was never visible; (b) the route inserts a blank-line token when a tool starts after some
    text, so a "Let me check…" preamble and the answer don't run together; (c) **maths rendering**:
    `remark-math` + `rehype-katex` (+ `katex` CSS/fonts bundled offline by Vite) in `Markdown.jsx`, with
    `lib/math.js normalizeMath` first converting `\[…\]` / same-line `$$…$$` to display blocks and `\(…\)` to
