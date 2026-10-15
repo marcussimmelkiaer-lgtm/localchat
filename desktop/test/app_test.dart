@@ -18,6 +18,10 @@ import 'package:localchat/ui/theme.dart';
 String sse(String event, Object data) => 'event: $event\r\ndata: ${jsonEncode(data)}\r\n\r\n';
 
 class FakeBackend {
+  FakeBackend({this.existing = false});
+
+  /// Start with one saved conversation (the app opens straight into it).
+  final bool existing;
   final List<Map<String, dynamic>> streamed = [];
   final List<String> renamed = [];
 
@@ -42,7 +46,29 @@ class FakeBackend {
       case ('POST', '/api/warmup'):
         return json({'model_loaded': true});
       case ('GET', '/api/conversations'):
-        return json([]);
+        return json(existing
+            ? [
+                {'id': 'c0', 'title': 'hello', 'created_at': '2026-10-15T09:00:00', 'updated_at': '2026-10-15T09:00:00'},
+              ]
+            : []);
+      case ('GET', '/api/conversations/c0'):
+        return json({
+          'id': 'c0',
+          'title': 'hello',
+          'created_at': '2026-10-15T09:00:00',
+          'updated_at': '2026-10-15T09:00:00',
+          'messages': [
+            {'id': 'm1', 'role': 'user', 'content': 'hello', 'status': 'done', 'created_at': '2026-10-15T09:00:00'},
+            {
+              'id': 'm2',
+              'role': 'assistant',
+              'content': 'Hello! How can I assist you today?',
+              'status': 'done',
+              'stats': {'tokens': 9, 'seconds': 0.3, 'tokens_per_second': 30.0},
+              'created_at': '2026-10-15T09:00:01',
+            },
+          ],
+        });
       case ('POST', '/api/conversations'):
         return json({'id': 'c1', 'title': '', 'created_at': '2026-10-15T10:00:00', 'updated_at': '2026-10-15T10:00:00'});
       case ('PATCH', '/api/conversations/c1'):
@@ -112,6 +138,27 @@ void main() {
     expect(state.activeMessages.last.status, 'done');
     expect(state.activeMessages.last.content, contains('in Tokyo.'));
 
+    state.dispose();
+  });
+
+  testWidgets('opens an existing conversation', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final backend = FakeBackend(existing: true);
+    final state = AppState(Api(Uri.parse('http://127.0.0.1:1'), client: backend.client));
+    await tester.pumpWidget(MaterialApp(theme: buildTheme(), home: Scaffold(body: HomeScreen(state: state))));
+    await tester.runAsync(() async {
+      await state.init();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('hello'), findsWidgets); // sidebar title + user bubble
+    expect(find.textContaining('How can I assist', findRichText: true), findsWidgets);
+    expect(find.textContaining('30.0 tok/s'), findsOneWidget);
     state.dispose();
   });
 }

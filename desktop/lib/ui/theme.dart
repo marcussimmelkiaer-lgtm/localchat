@@ -1,5 +1,6 @@
 // Monochrome, white-dominant palette (same tokens as frontend/tailwind.config.js).
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -81,17 +82,17 @@ class PulseDot extends StatefulWidget {
 class _PulseDotState extends State<PulseDot> with SingleTickerProviderStateMixin {
   late final AnimationController _c =
       AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
+  Timer? _start;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(widget.delay, () {
-      if (mounted) _c.repeat();
-    });
+    _start = Timer(widget.delay, _c.repeat);
   }
 
   @override
   void dispose() {
+    _start?.cancel();
     _c.dispose();
     super.dispose();
   }

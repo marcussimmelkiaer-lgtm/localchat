@@ -89,9 +89,8 @@ run.bat ──> python -m backend.main
 ## Key files
 
 Backend (`backend/`):
-- `main.py` — entry point. Picks/locks a 127.0.0.1 port, runs uvicorn in a daemon thread, waits for
-  `/healthz`, then opens the pywebview window. Contains `_WindowApi` + `_control_loop` (window
-  minimize/close, run on the webview worker thread — see "pywebview gotchas").
+- `main.py` — entry point: the HTTP server only (the window is the Flutter app, decision #20). Prints
+  `listening on http://…`, serves until `/api/shutdown`, then `os._exit(0)`.
 - `app.py` — FastAPI factory + lifespan (init DB, build engine; **model is NOT loaded inline at
   startup** — warmed on a background thread via `POST /api/warmup`, see decision #2). Serves `/healthz`,
   `/api/warmup`, and mounts the SPA from `static/`.
@@ -511,6 +510,34 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    allow_thinking, file_uploads, model_path, `[sampler]` (only temperature keeps its long explanation) and `[tools]`;
    port/n_ctx/use_gpu/max_live_chats/projection_model_path still work if added by hand (`Config` default `n_ctx`
    raised to 16384 to match). The user's two local config.toml files were regenerated from it, values preserved.
+
+20. **Flutter desktop app replaced the pywebview window** (Oct 15 2026, user decision after repeated Mac issues).
+   **Root cause found first**: a CI probe drove the real pywebview window on macOS 14/15/26: clicking close closed
+   the window but the Python process then **never exited** (hung in interpreter shutdown, model loaded or not) —
+   the "crash on close". Now: `desktop/` is a Flutter app (Windows + macOS; Dart; packages http, file_selector,
+   url_launcher, gpt_markdown for Markdown/LaTeX/code). `lib/backend.dart` finds the LocalChat folder by walking up
+   from the executable to `backend/main.py` (`LOCALCHAT_ROOT` overrides), starts `venv/.../python(w) -u -m
+   backend.main` with `LOCALCHAT_PARENT_PID`, reads the port from the `listening on http://…` line, writes the
+   backend's output to `LocalChat data/LocalChat.log`, and on exit (`AppLifecycleListener.onExitRequested`: window
+   close, Alt+F4, Cmd+Q) POSTs `/api/shutdown`, waits 8 s, else kills. `backend/main.py` is **server-only** and ends
+   with `os._exit(0)` (skips llama.cpp/Metal teardown); `/api/shutdown` stops answers in progress; a parent-PID
+   watchdog stops the backend if the app dies. **pywebview removed** from requirements (the PyInstaller installer
+   path in `packaging/` still references it — stale). macOS: App Sandbox **off** (must spawn Python), ad-hoc signed,
+   min macOS 12, `NSApp.activate` on launch (launcher starts the binary directly from Terminal so env vars pass
+   through). Windows: VC++ runtime DLLs copied next to the exe in CI. **Distribution**: `.github/workflows/desktop-app.yml`
+   (reusable) builds `LocalChat-windows.zip` (folder `LocalChat/`) and `LocalChat-macos.zip` (`ditto`, keeps symlinks
+   + signature) + `version.txt` (no trailing newline, so git EOL conversion can't change it). `export_workshop.py
+   --app-dir <artifact dir>` (now **required**) ships them as `app/LocalChat.zip` + `app/version.txt`; the launchers
+   unpack on first run and whenever `app/version.txt` differs from the unpacked copy's, then start the app (dev repo:
+   falls back to `desktop/build/...`). `workshop-first-run.yml` builds the app, exports, runs the launcher, chats,
+   then **quits the app like a user** (`taskkill` WM_CLOSE / `osascript quit`) and fails unless app + backend exit
+   within 30 s with no crash report — green on windows-latest + macos-14. `flutter test` covers think/maths helpers
+   and a full send→stream→render UI test against a MockClient backend. **Local build needs Windows Developer Mode**
+   (plugin symlinks) — not enabled on this machine; test with the CI artifact instead (`gh run download <run> -n
+   LocalChat-windows`). Flutter SDK is at `%LOCALAPPDATA%lutter`. Verified here: CI-built app from a fresh
+   export → launcher → window renders, model loads, chat reply, close → backend exit 0. **Sync procedure now**:
+   `gh run download <green run> -n LocalChat-windows -D <dir>` (or `-macos`), then export with `--app-dir <dir>`.
+   Not done yet: a real LocalChat app icon (still Flutter's), manual test on a real Mac.
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
