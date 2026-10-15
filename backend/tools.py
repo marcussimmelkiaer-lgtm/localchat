@@ -314,10 +314,13 @@ def search_documents(question: str) -> str:
         for path, (_, chunks) in index.items()
         for text, numbers in chunks
     ]
+    # A scanned PDF is only pictures of pages: there is no text to search.
+    unreadable = [path.name for path, (_, chunks) in index.items() if not chunks]
+    note = f"\n\n(No text could be read from: {', '.join(unreadable)}. Scanned documents need OCR first.)" if unreadable else ""
     if not scored:
-        return "The rag folder contains no documents."
+        return "The rag folder contains no readable documents." + note
     best = sorted(scored, reverse=True)[:TOP_RESULTS]
-    return "\n\n".join(f"[{name}, similarity {score:.2f}]\n{text}" for score, name, text in best)
+    return "\n\n".join(f"[{name}, similarity {score:.2f}]\n{text}" for score, name, text in best) + note
 
 
 # ============================================================================
