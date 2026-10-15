@@ -3,11 +3,8 @@
 A clean, ChatGPT-style desktop chat app that runs a local LLM entirely on your
 machine via the [NobodyWho](https://github.com/nobodywho-ooo/nobodywho) Python
 bindings (llama.cpp). Live token streaming, a tokens/second readout, and a
-monochrome, white-dominant interface. Native window (WKWebView on macOS,
-WebView2 on Windows).
-
-This is the **macOS (Apple Silicon)** build. The same codebase still runs on
-Windows — `backend/main.py` selects the platform path at runtime.
+monochrome, white-dominant interface, in a native Flutter desktop app for
+Windows and macOS.
 
 Everything runs locally — no cloud, no API keys.
 
@@ -78,8 +75,11 @@ experimenting with; the others below can be added by hand and default sensibly.
 - **Backend** — FastAPI serving the SPA + a streaming chat endpoint (SSE).
   Generation runs in a worker thread; tokens stream to the UI over Server-Sent
   Events. Conversations persist in a local SQLite file.
-- **Launcher** — `backend/main.py` runs the server in a daemon thread and opens
-  a native pywebview window (WKWebView on macOS, WebView2 on Windows).
+- **Desktop app** — Flutter (`desktop/`, see its README). It starts the Python
+  backend, shows the chat, and stops the backend when the window closes. CI
+  builds it per OS; the workshop repos ship it as `app/LocalChat.zip`, which
+  the launcher unpacks on first run. The browser UI below is the same app in a
+  web page (open the backend's address in a browser).
 
 ## Develop
 
@@ -90,8 +90,9 @@ npm run dev        # Vite dev server with API proxy to the backend
 npm run build      # rebuild backend/static (commit the result)
 ```
 
-Run the backend (without the window) for API testing:
+Run the backend on its own (it prints its address; open it in a browser for
+the web UI, or point the desktop app at this folder):
 
 ```
-LOCALCHAT_NO_WINDOW=1 venv/bin/python -m backend.main   # Windows: venv\Scripts\python
+venv/bin/python -m backend.main   # Windows: venv\Scripts\python
 ```

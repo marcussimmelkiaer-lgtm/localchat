@@ -46,10 +46,10 @@ class ErrorEvent extends ChatEvent {
 }
 
 class Api {
-  Api(this.base);
+  Api(this.base, {http.Client? client}) : _client = client ?? http.Client();
 
   final Uri base;
-  final http.Client _client = http.Client();
+  final http.Client _client;
 
   Uri _u(String path) => base.resolve(path);
 
