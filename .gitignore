@@ -26,3 +26,6 @@ packaging/windows/MicrosoftEdgeWebview2Setup.exe
 LocalChat.log
 # The app's own files in a source checkout (backend/paths.py state_dir).
 LocalChat data/
+
+# macOS window probe output (packaging/mac_gui_probe.py).
+probe-out/
