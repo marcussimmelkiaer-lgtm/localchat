@@ -499,6 +499,15 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    (old copies left as untracked `config.toml.bak`). The workshop READMEs got an "Experiment" section pointing at
    `config.toml` and `backend/tools.py`.
 
+19. **Tidy repo root** (Oct 15 2026, user request: professors should see only the launcher + `config.toml`).
+   `requirements.txt` and `config.example.toml` moved to **`backend/`** (launchers, `fetch_model._EXAMPLE_PATH`,
+   spec, CI updated). The app's own files (chat DB, `uploads/`, `LocalChat.log`) live in **`LocalChat data/`**
+   (`paths.state_dir()`; frozen builds = `data_dir()` unchanged); older root-level files are moved in on first use.
+   Slim repos ship **no `.gitignore`/`.gitattributes`**: the launchers append ignore rules to `.git/info/exclude`
+   once, and `export_workshop.py` stages with `core.autocrlf=false` so the `.bat` blob stays CRLF. **When syncing
+   the clones, also commit with `git -c core.autocrlf=false`.** Verified: fresh Windows export → launcher → smoke
+   test PASS; only untracked file afterwards was a test log; legacy DB/uploads migration.
+
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
 Single-user decode is **memory-bandwidth bound at batch 1**, not compute bound: each token streams the

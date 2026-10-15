@@ -28,11 +28,12 @@ Clone once, then double-click one file:
 - **macOS:** **`Start LocalChat.command`**
 
 On first launch it downloads uv + Python 3.12 into `.uv/`, installs the
-dependencies into `venv/`, copies `config.example.toml` to `config.toml`, and
+dependencies into `venv/`, copies `backend/config.example.toml` to `config.toml`, and
 **downloads the default chat model** (Qwen3-0.6B, ~640 MB) into NobodyWho's local
 cache. Bigger models are a click away in the app's **Models** picker. Later
 launches start straight away, offline. Dependencies are reinstalled whenever
-`requirements.txt` changes.
+`backend/requirements.txt` changes. Chats, uploads and the log live in
+`LocalChat data/`.
 
 > A `.gguf` placed next to the launcher is used instead of downloading (handy for
 > handing the model out on a USB stick). To pick a different download, set

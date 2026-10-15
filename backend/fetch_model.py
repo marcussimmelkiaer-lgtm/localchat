@@ -27,7 +27,7 @@ from .paths import bundle_dir, data_dir
 # source checkout). The example template it's seeded from is a shipped asset, so
 # it comes from the read-only bundle.
 CONFIG_PATH = data_dir() / "config.toml"
-_EXAMPLE_PATH = bundle_dir() / "config.example.toml"
+_EXAMPLE_PATH = bundle_dir() / "backend" / "config.example.toml"
 
 # Default model for a fresh machine: the smallest Qwen3 (~640 MB), so a first
 # launch on shared Wi-Fi is quick. Bigger Qwen3s are one click away in the Models

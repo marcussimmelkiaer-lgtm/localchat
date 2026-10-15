@@ -5,11 +5,14 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .paths import bundle_dir, data_dir
+from .paths import bundle_dir, data_dir, state_dir
 
 # Writable per-user dir (repo root in a source checkout; app-data when frozen).
-# config.toml, the SQLite DB and uploads live here.
+# config.toml lives here.
 ROOT = data_dir()
+# The app's own files (chat DB, uploads, log): ROOT/"LocalChat data" in a
+# checkout, the same per-user dir when frozen.
+STATE_DIR = state_dir()
 # Read-only shipped assets (repo root in a checkout; the bundle when frozen).
 STATIC_DIR = bundle_dir() / "backend" / "static"
 
@@ -34,7 +37,7 @@ class Config:
     max_live_chats: int = 3
     # [tools] switches from config.toml, e.g. {"weather": True}. See backend/tools.py.
     tools: dict = field(default_factory=dict)
-    db_path: str = str((ROOT / "localchat.db").resolve())
+    db_path: str = str((STATE_DIR / "localchat.db").resolve())
 
 
 def _as_bool(v, default: bool) -> bool:

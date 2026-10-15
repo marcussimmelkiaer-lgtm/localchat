@@ -52,27 +52,42 @@ if [ ! -x "venv/bin/python" ]; then
   "$UV" venv venv --python 3.12 --seed || fail "Could not set up Python."
 fi
 
-# --- Packages: install on first run, and again whenever requirements.txt
+# --- Packages: install on first run, and again whenever backend/requirements.txt
 #     changes. venv/.requirements.installed is a copy of the requirements.txt
 #     that was last installed successfully.
-if ! cmp -s requirements.txt venv/.requirements.installed; then
+if ! cmp -s backend/requirements.txt venv/.requirements.installed; then
   echo "Installing packages (this can take a few minutes)..."
-  "$UV" pip install --python venv/bin/python -r requirements.txt \
+  "$UV" pip install --python venv/bin/python -r backend/requirements.txt \
     || fail "Package installation failed. Check the internet connection."
-  cp requirements.txt venv/.requirements.installed
+  cp backend/requirements.txt venv/.requirements.installed
 fi
 
 # --- Config: create from template on first run ---
-[ -f config.toml ] || cp config.example.toml config.toml
+[ -f config.toml ] || cp backend/config.example.toml config.toml
+
+# --- Git: hide the files created above from `git status` (local to this
+#     clone, so the repo needs no .gitignore). Added once.
+if [ -d .git/info ] && ! grep -qs "LocalChat launcher" .git/info/exclude; then
+  cat >> .git/info/exclude <<'EOF'
+# Added by the LocalChat launcher: files created on first run.
+.uv/
+venv/
+config.toml
+LocalChat data/
+*.gguf
+__pycache__/
+EOF
+fi
 
 # --- Model: use a .gguf next to this file, else download the default once ---
 venv/bin/python -m backend.fetch_model
 
 # --- Launch the app, detached from this Terminal window so closing the window
-#     doesn't quit LocalChat. Output goes to LocalChat.log.
+#     doesn't quit LocalChat. Output goes to "LocalChat data/LocalChat.log".
 venv/bin/python - <<'PY' || fail "Could not start LocalChat."
 import subprocess, sys
-log = open("LocalChat.log", "w")
+from backend.paths import state_dir
+log = open(state_dir() / "LocalChat.log", "w")
 subprocess.Popen([sys.executable, "-u", "-m", "backend.main"],
                  stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                  start_new_session=True)

@@ -24,3 +24,5 @@ packaging/windows/MicrosoftEdgeWebview2Setup.exe
 
 # Runtime log of windowless launches (backend/main.py _ensure_std_streams).
 LocalChat.log
+# The app's own files in a source checkout (backend/paths.py state_dir).
+LocalChat data/

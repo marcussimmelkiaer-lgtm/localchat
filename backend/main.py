@@ -227,12 +227,12 @@ def _ensure_std_streams():
     With no console (the frozen build is console=False; run.bat starts
     pythonw.exe) sys.stdout/stderr are None, and uvicorn's log formatter crashes
     on sys.stdout.isatty() at startup. Point both at a log file in the data dir
-    instead (fresh each launch) — also useful when a user reports a problem."""
+    instead (fresh each launch, in the state dir) — also useful when a user reports a problem."""
     if sys.stdout is not None and sys.stderr is not None:
         return
-    from .paths import data_dir
+    from .paths import state_dir
 
-    log = open(data_dir() / "LocalChat.log", "w", encoding="utf-8", buffering=1)
+    log = open(state_dir() / "LocalChat.log", "w", encoding="utf-8", buffering=1)
     sys.stdout = sys.stdout or log
     sys.stderr = sys.stderr or log
 

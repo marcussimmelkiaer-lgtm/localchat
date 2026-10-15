@@ -23,7 +23,7 @@ IS_MAC = sys.platform == "darwin"
 # --- Shipped data (read-only in the bundle) ---------------------------------
 datas = [
     (os.path.join(ROOT, "backend", "static"), os.path.join("backend", "static")),
-    (os.path.join(ROOT, "config.example.toml"), "."),
+    (os.path.join(ROOT, "backend", "config.example.toml"), "backend"),
 ]
 binaries = []
 hiddenimports = [

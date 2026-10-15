@@ -79,4 +79,4 @@ jobs:
         shell: bash
         run: |
           cat "$SLIM/launcher.log" 2>/dev/null || true
-          cat "$SLIM/LocalChat.log" 2>/dev/null || true
+          cat "$SLIM/LocalChat data/LocalChat.log" 2>/dev/null || true

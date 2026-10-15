@@ -4,7 +4,7 @@ import base64
 import io
 import re
 
-from .config import ROOT
+from .config import STATE_DIR
 
 # Attachment text extraction. Incoming attachments arrive as
 # {name, mime, data_b64} in the chat POST body; we decode them, pull out plain
@@ -23,7 +23,7 @@ TRUNC_MARKER = "\n\n[…truncated]"
 # Uploaded images are saved (downscaled) here so the vision model can read them
 # by path and the UI can re-serve thumbnails after a reload. Raw bytes of other
 # file types are still never stored — only their extracted text.
-UPLOADS_DIR = ROOT / "uploads"
+UPLOADS_DIR = STATE_DIR / "uploads"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 MAX_IMAGE_DIM = 1024  # longest side; screenshots downscale to keep token cost sane
 

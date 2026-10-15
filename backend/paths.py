@@ -65,3 +65,30 @@ def data_dir() -> Path:
 
     base.mkdir(parents=True, exist_ok=True)
     return base
+
+
+# Files the app writes for itself (not meant to be edited by hand). In a source
+# checkout they get their own folder so the repo root stays tidy: just the
+# launcher, config.toml and the learner-facing folders.
+_STATE_DIR_NAME = "LocalChat data"
+_STATE_FILES = ("localchat.db", "localchat.db-wal", "localchat.db-shm", "uploads", "LocalChat.log")
+
+
+def state_dir() -> Path:
+    """WRITABLE directory for the chat DB, uploaded images and the log.
+
+    In a source checkout: `<repo>/LocalChat data/`. Older versions kept these in
+    the repo root; they are moved in on first use so chat history survives. In a
+    frozen build this is simply `data_dir()` (already a per-user app folder)."""
+    if is_frozen():
+        return data_dir()
+    d = _REPO_ROOT / _STATE_DIR_NAME
+    d.mkdir(exist_ok=True)
+    for name in _STATE_FILES:
+        old, new = _REPO_ROOT / name, d / name
+        if old.exists() and not new.exists():
+            try:
+                old.rename(new)
+            except OSError:
+                pass  # e.g. still open elsewhere; the app just starts fresh there
+    return d

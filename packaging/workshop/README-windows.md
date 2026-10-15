@@ -57,7 +57,7 @@ and restart LocalChat. Each setting is explained in the file:
 
 - **"Setup did not finish"**: check the internet connection and double-click
   **Start LocalChat.bat** again. It picks up where it left off.
-- **The app window doesn't appear**: the file `LocalChat.log` in the LocalChat
+- **The app window doesn't appear**: the file `LocalChat data\LocalChat.log` in the LocalChat
   folder says why.
 - **Uninstall**: delete the LocalChat folder. Downloaded models are kept in
   `%LOCALAPPDATA%\nobodywho` and can be deleted too.

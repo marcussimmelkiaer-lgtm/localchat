@@ -34,7 +34,7 @@ jobs:
       - name: Install deps + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r backend/requirements.txt pyinstaller
 
       - name: Nicer DMG layout (optional)
         run: brew install create-dmg || true
@@ -77,7 +77,7 @@ jobs:
       - name: Install deps + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r backend/requirements.txt pyinstaller
 
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y

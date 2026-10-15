@@ -35,27 +35,44 @@ echo First-time setup: downloading Python...
 "%UV%" venv venv --python 3.12 --seed
 if errorlevel 1 goto :fail
 
-REM --- Packages: install on first run, and again whenever requirements.txt
+REM --- Packages: install on first run, and again whenever backend\requirements.txt
 REM     changes. venv\.requirements.installed is a copy of the requirements.txt
 REM     that was last installed successfully.
 :deps
-fc /b requirements.txt venv\.requirements.installed >nul 2>&1
+fc /b backend\requirements.txt venv\.requirements.installed >nul 2>&1
 if not errorlevel 1 goto :config
 echo Installing packages, this can take a few minutes...
-"%UV%" pip install --python venv\Scripts\python.exe -r requirements.txt
+"%UV%" pip install --python venv\Scripts\python.exe -r backend\requirements.txt
 if errorlevel 1 goto :fail
-copy /y requirements.txt venv\.requirements.installed >nul
+copy /y backend\requirements.txt venv\.requirements.installed >nul
 
 REM --- Config: create from template on first run ---
 :config
-if not exist "config.toml" copy /y config.example.toml config.toml >nul
+if not exist "config.toml" copy /y backend\config.example.toml config.toml >nul
+
+REM --- Git: hide the files created above from `git status` (local to this
+REM     clone, so the repo needs no .gitignore). Added once.
+if not exist ".git\info" goto :model
+findstr /c:"LocalChat launcher" ".git\info\exclude" >nul 2>&1
+if not errorlevel 1 goto :model
+>>".git\info\exclude" (
+  echo # Added by the LocalChat launcher: files created on first run.
+  echo .uv/
+  echo venv/
+  echo config.toml
+  echo LocalChat data/
+  echo *.gguf
+  echo __pycache__/
+)
+
+:model
 
 REM --- Model: use a .gguf next to this file, else download the default once ---
 "venv\Scripts\python.exe" -m backend.fetch_model
 
 REM --- Launch the app ---
 REM pythonw = no console window; `start` detaches it so this window closes.
-REM Output goes to LocalChat.log. For live logs run:
+REM Output goes to "LocalChat data\LocalChat.log". For live logs run:
 REM   venv\Scripts\python.exe -m backend.main
 start "" "venv\Scripts\pythonw.exe" -m backend.main
 exit /b 0

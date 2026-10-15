@@ -2,8 +2,10 @@
 
 This repo holds everything (frontend source, packaging, CI). Workshop
 participants instead clone a slim repo with just the runtime: one launcher,
-backend/ (incl. the prebuilt SPA in backend/static), requirements and the config
-template. Both slim repos come from here, so they never drift apart.
+backend/ (incl. the prebuilt SPA, requirements and the config template) and
+the example data/ + rag/ folders. No .gitignore / .gitattributes: the launcher
+adds its own ignore rules to .git/info/exclude, and line endings are committed
+as-is (CRLF .bat, LF .command), so the root shows only what learners need. Both slim repos come from here, so they never drift apart.
 
     python packaging/export_workshop.py windows ../localchat-windows --repo-url https://github.com/<owner>/localchat-windows.git
     python packaging/export_workshop.py mac     ../localchat-mac     --repo-url https://github.com/<owner>/localchat-mac.git
@@ -32,7 +34,7 @@ LAUNCHERS = {"windows": "Start LocalChat.bat", "mac": "Start LocalChat.command"}
 
 # Shared runtime files (repo-relative). backend/ is added from `git ls-files`
 # so caches and local junk never leak into the export.
-COMMON = ["requirements.txt", "config.example.toml", ".gitattributes", "data/sales_2025.csv", "rag/employee_handbook.md"]
+COMMON = ["data/sales_2025.csv", "rag/employee_handbook.md"]
 
 
 def _git(*args: str, cwd: Path) -> str:
@@ -49,7 +51,6 @@ def file_list(target_os: str) -> dict[str, Path]:
             files[line] = ROOT / line
     files[LAUNCHERS[target_os]] = ROOT / LAUNCHERS[target_os]
     files["README.md"] = WORKSHOP / f"README-{target_os}.md"
-    files[".gitignore"] = WORKSHOP / "gitignore"
     return files
 
 
@@ -76,10 +77,13 @@ def export(target_os: str, out: Path, repo_url: str) -> None:
     print(f"exported {len(files)} files for {target_os} -> {out}")
 
     if (out / ".git").exists():
-        _git("add", "-A", cwd=out)
+        # autocrlf=false: with no .gitattributes in the slim repo, commit the
+        # launchers byte-for-byte (CRLF .bat, LF .command) so every clone gets
+        # working line endings whatever the cloner's own git settings.
+        _git("-c", "core.autocrlf=false", "add", "-A", cwd=out)
         if target_os == "mac":
             # Finder only runs a .command that is executable; git keeps the bit.
-            _git("add", "--chmod=+x", LAUNCHERS["mac"], cwd=out)
+            _git("-c", "core.autocrlf=false", "add", "--chmod=+x", LAUNCHERS["mac"], cwd=out)
         print("staged in", out, "- review with `git status`, then commit + push")
 
 
