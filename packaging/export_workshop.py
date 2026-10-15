@@ -78,9 +78,7 @@ def export(target_os: str, out: Path, repo_url: str) -> None:
         elif src.suffix in LF_TEXT:
             # Line endings as on a Mac/Linux checkout, whatever this machine's
             # git settings made of the working copy (only the .bat keeps CRLF).
-            dst.write_bytes(src.read_bytes().replace(b"
-", b"
-"))
+            dst.write_bytes(src.read_bytes().replace(b"\r\n", b"\n"))
         else:
             shutil.copyfile(src, dst)
     print(f"exported {len(files)} files for {target_os} -> {out}")
