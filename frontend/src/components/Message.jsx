@@ -39,16 +39,39 @@ function AttachmentChips({ attachments, messageId }) {
   )
 }
 
-// Split a reasoning model's output into its <think> block and the answer.
-// During streaming the closing tag may not have arrived yet (thinkingDone=false).
+// Split a reasoning model's output into its <think> blocks and the answer.
+// After a tool call the model thinks again, so there can be several blocks;
+// they're shown together, separated by a rule. During streaming the last
+// closing tag may not have arrived yet (thinkingDone=false).
 function splitThinking(content) {
-  const open = content.indexOf('<think>')
-  if (open === -1) return { thinking: null, answer: content, thinkingDone: true }
-  const pre = content.slice(0, open)
-  const rest = content.slice(open + 7)
-  const close = rest.indexOf('</think>')
-  if (close === -1) return { thinking: rest, answer: pre, thinkingDone: false }
-  return { thinking: rest.slice(0, close), answer: pre + rest.slice(close + 8), thinkingDone: true }
+  const thoughts = []
+  let answer = ''
+  let rest = content
+  let thinkingDone = true
+  for (;;) {
+    const open = rest.indexOf('<think>')
+    if (open === -1) {
+      answer += rest
+      break
+    }
+    answer += rest.slice(0, open)
+    rest = rest.slice(open + 7)
+    const close = rest.indexOf('</think>')
+    if (close === -1) {
+      thoughts.push(rest)
+      thinkingDone = false
+      break
+    }
+    thoughts.push(rest.slice(0, close))
+    rest = rest.slice(close + 8)
+  }
+  const text = thoughts
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .join('\n\n---\n\n')
+  // No blocks, or only empty ones once finished: no thinking box at all.
+  const thinking = thoughts.length === 0 || (!text && thinkingDone) ? null : text
+  return { thinking, answer, thinkingDone }
 }
 
 function LoadingDots() {
