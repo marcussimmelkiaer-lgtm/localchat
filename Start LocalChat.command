@@ -67,13 +67,14 @@ fi
 
 # --- Git: hide the files created above from `git status` (local to this
 #     clone, so the repo needs no .gitignore). Added once.
-if [ -d .git/info ] && ! grep -qs "LocalChat launcher" .git/info/exclude; then
+if [ -d .git/info ] && ! grep -qs "app/LocalChat.app/" .git/info/exclude; then
   cat >> .git/info/exclude <<'EOF'
 # Added by the LocalChat launcher: files created on first run.
 .uv/
 venv/
 config.toml
 LocalChat data/
+app/LocalChat.app/
 *.gguf
 __pycache__/
 EOF
@@ -82,15 +83,25 @@ fi
 # --- Model: use a .gguf next to this file, else download the default once ---
 venv/bin/python -m backend.fetch_model
 
-# --- Launch the app, detached from this Terminal window so closing the window
-#     doesn't quit LocalChat. Output goes to "LocalChat data/LocalChat.log".
-venv/bin/python - <<'PY' || fail "Could not start LocalChat."
+# --- The app window: unpack it on first run, and again after an update
+#     (app/version.txt differs from the unpacked copy's) ---
+APP=app/LocalChat.app
+if [ -f app/LocalChat.zip ] && ! cmp -s app/version.txt "$APP/Contents/Resources/version.txt"; then
+  echo "Unpacking the LocalChat app..."
+  rm -rf "$APP"
+  ditto -x -k app/LocalChat.zip app || fail "Could not unpack the LocalChat app."
+fi
+# In the source repo (no app/), use the app built from desktop/.
+[ -d "$APP" ] || APP=desktop/build/macos/Build/Products/Release/LocalChat.app
+[ -d "$APP" ] || fail "The LocalChat app is missing (app/LocalChat.zip). Download LocalChat again."
+
+# --- Launch, detached from this Terminal window so closing the window doesn't
+#     quit LocalChat. The app starts the Python backend itself and stops it when
+#     it quits; backend output goes to "LocalChat data/LocalChat.log".
+venv/bin/python - "$APP/Contents/MacOS/LocalChat" <<'PY' || fail "Could not start LocalChat."
 import subprocess, sys
-from backend.paths import state_dir
-log = open(state_dir() / "LocalChat.log", "w")
-subprocess.Popen([sys.executable, "-u", "-m", "backend.main"],
-                 stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                 start_new_session=True)
+subprocess.Popen([sys.argv[1]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                 stderr=subprocess.DEVNULL, start_new_session=True)
 PY
 echo
 echo "LocalChat is starting. You can close this Terminal window."

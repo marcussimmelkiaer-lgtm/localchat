@@ -7,8 +7,13 @@ the example data/ + rag/ folders. No .gitignore / .gitattributes: the launcher
 adds its own ignore rules to .git/info/exclude, and line endings are committed
 as-is (CRLF .bat, LF .command), so the root shows only what learners need. Both slim repos come from here, so they never drift apart.
 
-    python packaging/export_workshop.py windows ../localchat-windows --repo-url https://github.com/<owner>/localchat-windows.git
-    python packaging/export_workshop.py mac     ../localchat-mac     --repo-url https://github.com/<owner>/localchat-mac.git
+    python packaging/export_workshop.py windows ../localchat-windows --repo-url https://github.com/<owner>/localchat-windows.git --app-dir <dir>
+    python packaging/export_workshop.py mac     ../localchat-mac     --repo-url https://github.com/<owner>/localchat-mac.git --app-dir <dir>
+
+--app-dir is a folder holding the desktop app built by CI (the
+"LocalChat-windows" / "LocalChat-macos" artifact of .github/workflows/desktop-app.yml:
+LocalChat-<os>.zip + version.txt). It is exported as app/LocalChat.zip and
+app/version.txt; the launcher unpacks it on first run.
 
 --repo-url fills the `git clone` line in the README; re-export with the new URL
 when the repos move.
@@ -31,6 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WORKSHOP = Path(__file__).resolve().parent / "workshop"
 
 LAUNCHERS = {"windows": "Start LocalChat.bat", "mac": "Start LocalChat.command"}
+APP_ZIPS = {"windows": "LocalChat-windows.zip", "mac": "LocalChat-macos.zip"}
 
 # Text files written with LF endings (the slim repos have no .gitattributes).
 LF_TEXT = {".py", ".toml", ".txt", ".md", ".csv", ".command", ".html", ".js", ".css", ".json", ".svg"}
@@ -46,9 +52,11 @@ def _git(*args: str, cwd: Path) -> str:
     ).stdout
 
 
-def file_list(target_os: str) -> dict[str, Path]:
+def file_list(target_os: str, app_dir: Path) -> dict[str, Path]:
     """Map of export-relative path -> source file."""
     files = {p: ROOT / p for p in COMMON}
+    files["app/LocalChat.zip"] = app_dir / APP_ZIPS[target_os]
+    files["app/version.txt"] = app_dir / "version.txt"
     for line in _git("ls-files", "backend", cwd=ROOT).splitlines():
         if (ROOT / line).is_file():  # skip tracked-but-deleted files
             files[line] = ROOT / line
@@ -57,8 +65,8 @@ def file_list(target_os: str) -> dict[str, Path]:
     return files
 
 
-def export(target_os: str, out: Path, repo_url: str) -> None:
-    files = file_list(target_os)
+def export(target_os: str, out: Path, repo_url: str, app_dir: Path) -> None:
+    files = file_list(target_os, app_dir)
     missing = [str(src) for src in files.values() if not src.is_file()]
     if missing:
         sys.exit("missing source files:\n  " + "\n  ".join(missing))
@@ -99,10 +107,12 @@ def main() -> None:
     ap.add_argument("os", choices=sorted(LAUNCHERS))
     ap.add_argument("out", type=Path, help="target directory (ideally a clone of the slim repo)")
     ap.add_argument("--repo-url", required=True, help="clone URL shown in the README")
+    ap.add_argument("--app-dir", type=Path, required=True,
+                    help="folder with the CI-built desktop app (LocalChat-<os>.zip + version.txt)")
     args = ap.parse_args()
     if args.out.resolve() == ROOT:
         sys.exit("refusing to export over the source repo")
-    export(args.os, args.out.resolve(), args.repo_url)
+    export(args.os, args.out.resolve(), args.repo_url, args.app_dir.resolve())
 
 
 if __name__ == "__main__":

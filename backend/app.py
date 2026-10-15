@@ -60,6 +60,22 @@ def create_app(cfg: Config) -> FastAPI:
             "model_error": getattr(eng, "model_error", None),
         }
 
+    @app.post("/api/shutdown")
+    def shutdown():
+        # Sent by the desktop app when its window closes. Stop any answer being
+        # generated (it is saved as "stopped"), let uvicorn finish the in-flight
+        # requests, then main() ends the process (see backend/main.py).
+        for conv_id, ev in list(app.state.stops.items()):
+            ev.set()
+            try:
+                app.state.engine.stop(conv_id)
+            except Exception:  # noqa: BLE001
+                pass
+        server = getattr(app.state, "server", None)
+        if server is not None:
+            server.should_exit = True
+        return {"ok": True}
+
     # Serve the built SPA from the same origin (no CORS). Registered last so the
     # API routes above take precedence.
     if STATIC_DIR.exists():

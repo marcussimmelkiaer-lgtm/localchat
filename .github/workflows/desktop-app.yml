@@ -1,0 +1,76 @@
+name: Desktop app
+
+# Builds the Flutter desktop app (desktop/) for Windows and macOS and uploads
+# each as a zip artifact: LocalChat-windows (LocalChat/ folder with the .exe)
+# and LocalChat-macos (LocalChat.app, zipped with ditto so the framework
+# symlinks and the ad-hoc signature survive). packaging/export_workshop.py puts
+# the zip in the slim repos as app/LocalChat.zip; the launcher unpacks it.
+#
+# Also called by workshop-first-run.yml, so the end-to-end test uses the app
+# built from the same commit.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+          - os: macos-14
+            target: macos
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Build (Windows)
+        if: matrix.target == 'windows'
+        run: |
+          flutter build windows --release
+          OUT=build/windows/x64/runner/Release
+          # The Visual C++ runtime isn't on every PC; ship it next to the .exe.
+          for dll in msvcp140.dll vcruntime140.dll vcruntime140_1.dll; do
+            cp "/c/Windows/System32/$dll" "$OUT/"
+          done
+          printf %s "$(git rev-parse --short HEAD)" > "$OUT/version.txt"
+          mkdir -p ../dist && rm -rf ../dist/LocalChat && cp -r "$OUT" ../dist/LocalChat
+          cd ../dist && 7z a -tzip LocalChat-windows.zip LocalChat > /dev/null
+          cp LocalChat/version.txt version.txt
+
+      - name: Build (macOS)
+        if: matrix.target == 'macos'
+        run: |
+          flutter build macos --release
+          APP=build/macos/Build/Products/Release/LocalChat.app
+          printf %s "$(git rev-parse --short HEAD)" > "$APP/Contents/Resources/version.txt"
+          codesign --force --deep --sign - "$APP"   # re-seal after adding version.txt
+          codesign --verify --deep --strict "$APP"
+          lipo -archs "$APP/Contents/MacOS/LocalChat"
+          mkdir -p ../dist
+          ditto -c -k --keepParent "$APP" ../dist/LocalChat-macos.zip
+          printf %s "$(git rev-parse --short HEAD)" > ../dist/version.txt
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: LocalChat-${{ matrix.target }}
+          path: |
+            dist/LocalChat-${{ matrix.target }}.zip
+            dist/version.txt
+          if-no-files-found: error

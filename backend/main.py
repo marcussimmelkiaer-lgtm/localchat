@@ -1,12 +1,24 @@
+"""LocalChat backend entry point: `python -m backend.main`.
+
+Runs the local HTTP server (FastAPI + uvicorn) and nothing else. The window is
+the Flutter desktop app in desktop/, which starts this process, talks to it over
+http://127.0.0.1:<port>, and asks it to stop (POST /api/shutdown) when the
+window closes. The same UI is also served to a normal browser at that address.
+
+Exiting: the process ends with os._exit() once the server has stopped. A normal
+interpreter exit would run llama.cpp's native teardown (Metal on macOS) while
+model and worker threads are still alive, which crashes ("Python quit
+unexpectedly"). Nothing needs that teardown: SQLite commits every write, and the
+OS reclaims the model's memory.
+"""
+
 from __future__ import annotations
 
 import os
-import queue
 import socket
 import sys
 import threading
 import time
-import urllib.request
 
 import uvicorn
 
@@ -30,204 +42,45 @@ def _pick_port(host: str, preferred: int) -> int:
     return preferred
 
 
-class _WindowApi:
-    """Exposed to the frameless window's custom title bar via pywebview js_api.
-
-    Calling window ops (minimize / fullscreen / destroy) directly from a js_api
-    callback crashes the WebView2 (Windows) build. So the bridge methods only
-    ENQUEUE a command; the actual window calls run in the webview worker thread
-    (see _control_loop_win / _control_loop_native), the safe context for them."""
-
-    def __init__(self):
-        # Underscore-prefixed so pywebview doesn't try to serialize these (the
-        # Window object graph) when exposing the api to JS — that serialization
-        # spams the console with AccessibilityObject recursion errors.
-        self._window = None
-        self._cmds: "queue.Queue[str]" = queue.Queue()
-        self._fullscreen = False  # owned by the control-loop thread
-
-    def minimize(self):
-        self._cmds.put("minimize")
-
-    def close(self):
-        self._cmds.put("close")
-
-    def toggle_fullscreen(self):
-        self._cmds.put("toggle_fullscreen")
-
-
-def _control_loop_native(api: _WindowApi):
-    """macOS / non-Windows control loop.
-
-    On WKWebView (Cocoa) the WebView2 crash that forces the SetWindowPos dance on
-    Windows does NOT apply, so window ops can be called straight through pywebview.
-    Drains the same command queue as the Windows loop and dispatches each command
-    to the native window. No initial bounds snap: the window is created at the
-    working-area size by _initial_geometry_darwin."""
-    while True:
-        cmd = api._cmds.get()
-        if cmd == "__stop__":
-            break
-        w = api._window
-        if w is None:
-            continue
-        try:
-            if cmd == "minimize":
-                w.minimize()
-            elif cmd == "close":
-                w.destroy()
-                break
-            elif cmd == "toggle_fullscreen":
-                w.toggle_fullscreen()
-                api._fullscreen = not api._fullscreen
-        except Exception:  # noqa: BLE001
-            pass
-
-
-def _control_loop_win(api: _WindowApi):
-    """Runs window operations on the webview worker thread (the safe context).
-
-    Fullscreen is done WITHOUT pywebview's toggle_fullscreen(): that mutates
-    FormBorderStyle + WindowState + DWM attributes on the live window, which
-    crashes this WebView2 build (exit -805306369). Instead we only call
-    SetWindowPos to swap the window's bounds between the monitor's working area
-    (normal) and its full bounds + topmost (fullscreen). SetWindowPos is the same
-    non-invasive primitive pywebview's own resize()/move() use, and it is safe to
-    call cross-thread. The window is created in the Normal WindowState (never
-    maximized), so its bounds are honored and WindowState is never touched."""
-    import ctypes
-    from ctypes import wintypes
-
-    import webview.platforms.winforms as wf
-
-    set_window_pos = wf.windll.user32.SetWindowPos
-    set_window_pos.argtypes = [
-        wintypes.HWND,
-        wintypes.HWND,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_uint,
-    ]
-    set_window_pos.restype = wintypes.BOOL
-
-    HWND_TOPMOST = -1
-    HWND_NOTOPMOST = -2
-    SWP_SHOWWINDOW = 0x0040
-
-    def _inst():
-        w = api._window
-        return wf.BrowserView.instances.get(w.uid) if w is not None else None
-
-    def _apply(fullscreen: bool):
-        inst = _inst()
-        if inst is None:
-            return
-        screen = wf.WinForms.Screen.FromControl(inst)
-        rect = screen.Bounds if fullscreen else screen.WorkingArea
-        set_window_pos(
-            int(inst.Handle.ToInt64()),
-            HWND_TOPMOST if fullscreen else HWND_NOTOPMOST,
-            rect.X,
-            rect.Y,
-            rect.Width,
-            rect.Height,
-            SWP_SHOWWINDOW,
-        )
-        api._fullscreen = fullscreen
-
-    # Wait for the native form to come up, then snap the frameless window to the
-    # working area so it covers the screen (minus taskbar) like a maximized window.
-    for _ in range(200):  # up to ~10s
-        inst = _inst()
-        if inst is not None and inst.Handle.ToInt64() != 0:
-            break
-        time.sleep(0.05)
-    _apply(False)
-
-    while True:
-        cmd = api._cmds.get()
-        if cmd == "__stop__":
-            break
-        w = api._window
-        if w is None:
-            continue
-        try:
-            if cmd == "minimize":
-                w.minimize()
-            elif cmd == "close":
-                w.destroy()
-                break
-            elif cmd == "toggle_fullscreen":
-                _apply(not api._fullscreen)
-        except Exception:  # noqa: BLE001
-            pass
-
-
-def _wait_ready(url: str, timeout: float = 20.0) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(url, timeout=1) as r:
-                if r.status == 200:
-                    return True
-        except Exception:  # noqa: BLE001
-            time.sleep(0.1)
-    return False
-
-
-def _initial_geometry_darwin():
-    """Primary-screen visible frame on macOS: (x, y, width, height).
-
-    visibleFrame() already excludes the menu bar and Dock, so sizing to it gives
-    the maximized look. x/y are left None (pywebview centers the window): Cocoa's
-    bottom-left origin makes passing explicit top-left coords error-prone."""
-    try:
-        from AppKit import NSScreen  # provided by pyobjc (pulled in by pywebview)
-
-        vf = NSScreen.mainScreen().visibleFrame()
-        return (None, None, int(vf.size.width), int(vf.size.height))
-    except Exception:  # noqa: BLE001
-        return (None, None, 1100, 760)
-
-
-def _initial_geometry_win():
-    """Primary-monitor working area in logical pixels: (x, y, width, height).
-
-    Used only for the window's initial size/position so it opens already filling
-    the screen; the control loop re-snaps it to exact physical bounds once the
-    native form exists. Falls back to a centered default if anything fails."""
-    try:
+def _pid_alive(pid: int) -> bool:
+    if os.name == "nt":
         import ctypes
-        from ctypes import wintypes
 
-        user32 = ctypes.windll.user32
-        rect = wintypes.RECT()
-        SPI_GETWORKAREA = 0x0030
-        user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
-        try:
-            dpi = user32.GetDpiForSystem()
-        except Exception:  # noqa: BLE001
-            dpi = 96
-        scale = (dpi / 96.0) or 1.0
-        return (
-            int(rect.left / scale),
-            int(rect.top / scale),
-            int((rect.right - rect.left) / scale),
-            int((rect.bottom - rect.top) / scale),
-        )
-    except Exception:  # noqa: BLE001
-        return (None, None, 1100, 760)
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel32.CloseHandle(handle)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _watch_parent(server: uvicorn.Server, pid: int) -> None:
+    """Stop when the desktop app that started us is gone (e.g. it crashed or
+    was force-quit and never sent /api/shutdown)."""
+    while not server.should_exit:
+        if not _pid_alive(pid):
+            print(f"[main] desktop app (pid {pid}) is gone; shutting down")
+            server.should_exit = True
+            return
+        time.sleep(2)
 
 
 def _ensure_std_streams():
     """Give a windowless launch somewhere to write.
 
-    With no console (the frozen build is console=False; run.bat starts
-    pythonw.exe) sys.stdout/stderr are None, and uvicorn's log formatter crashes
-    on sys.stdout.isatty() at startup. Point both at a log file in the data dir
-    instead (fresh each launch, in the state dir) — also useful when a user reports a problem."""
+    Started without a console (pythonw.exe, or by a GUI app without pipes)
+    sys.stdout/stderr are None, and uvicorn's log formatter crashes on
+    sys.stdout.isatty() at startup. Point both at the log file in the state dir
+    instead (fresh each launch) — also useful when a user reports a problem."""
     if sys.stdout is not None and sys.stderr is not None:
         return
     from .paths import state_dir
@@ -247,69 +100,23 @@ def main():
     port = _pick_port(cfg.host, cfg.port)
     app = create_app(cfg)
 
-    server = uvicorn.Server(
-        uvicorn.Config(app, host=cfg.host, port=port, log_level="warning")
-    )
-    thread = threading.Thread(target=server.run, daemon=True)
-    thread.start()
+    server = uvicorn.Server(uvicorn.Config(app, host=cfg.host, port=port, log_level="warning", timeout_graceful_shutdown=5))
+    app.state.server = server  # POST /api/shutdown sets server.should_exit
 
-    url = f"http://{cfg.host}:{port}"
-    if not _wait_ready(url + "/healthz"):
-        print("[main] server did not become ready in time")
+    parent = os.environ.get("LOCALCHAT_PARENT_PID")
+    if parent and parent.isdigit():
+        threading.Thread(target=_watch_parent, args=(server, int(parent)), daemon=True).start()
 
-    # Headless mode for automated testing (no GUI window).
-    if os.environ.get("LOCALCHAT_NO_WINDOW"):
-        print(f"[main] running headless at {url} (no window). Ctrl+C to stop.")
-        try:
-            while thread.is_alive():
-                time.sleep(0.5)
-        except KeyboardInterrupt:
-            pass
-        server.should_exit = True
-        return
-
-    import webview
-
-    # Pick the platform-specific window helpers. macOS/WKWebView can use
-    # pywebview's native window ops directly; Windows/WebView2 needs the
-    # SetWindowPos dance (see _control_loop_win). Other platforms fall back to the
-    # native path with a centered default size.
-    if sys.platform == "darwin":
-        geometry_fn, control_loop = _initial_geometry_darwin, _control_loop_native
-    elif os.name == "nt":
-        geometry_fn, control_loop = _initial_geometry_win, _control_loop_win
-    else:
-        geometry_fn = lambda: (None, None, 1100, 760)  # noqa: E731
-        control_loop = _control_loop_native
-
-    # Initial geometry ≈ primary monitor working area, so the frameless window
-    # comes up covering the screen (on Windows the control loop then snaps it
-    # pixel-exact). The window is created in the Normal WindowState (NOT
-    # maximized) so its bounds can be swapped for the fullscreen toggle.
-    gx, gy, gw, gh = geometry_fn()
-
-    api = _WindowApi()
-    window = webview.create_window(
-        "LocalChat",
-        url,
-        x=gx,
-        y=gy,
-        width=gw,
-        height=gh,
-        min_size=(720, 520),
-        frameless=True,
-        easy_drag=False,
-        js_api=api,
-    )
-    api._window = window
-    # Run the control loop on the webview worker thread (window ops are only
-    # safe there). start() blocks until the window closes.
-    webview.start(control_loop, api)
-
-    # Window closed — unblock the control loop (if still waiting) and shut down.
-    api._cmds.put("__stop__")
-    server.should_exit = True
-    thread.join(timeout=5)
+    # The desktop app reads this line to learn the port.
+    print(f"[main] LocalChat backend listening on http://{cfg.host}:{port}", flush=True)
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        pass
+    print("[main] stopped", flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

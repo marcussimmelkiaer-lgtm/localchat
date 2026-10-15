@@ -53,7 +53,7 @@ if not exist "config.toml" copy /y backend\config.example.toml config.toml >nul
 REM --- Git: hide the files created above from `git status` (local to this
 REM     clone, so the repo needs no .gitignore). Added once.
 if not exist ".git\info" goto :model
-findstr /c:"LocalChat launcher" ".git\info\exclude" >nul 2>&1
+findstr /c:"app/LocalChat/" ".git\info\exclude" >nul 2>&1
 if not errorlevel 1 goto :model
 >>".git\info\exclude" (
   echo # Added by the LocalChat launcher: files created on first run.
@@ -61,6 +61,7 @@ if not errorlevel 1 goto :model
   echo venv/
   echo config.toml
   echo LocalChat data/
+  echo app/LocalChat/
   echo *.gguf
   echo __pycache__/
 )
@@ -70,12 +71,32 @@ if not errorlevel 1 goto :model
 REM --- Model: use a .gguf next to this file, else download the default once ---
 "venv\Scripts\python.exe" -m backend.fetch_model
 
-REM --- Launch the app ---
-REM pythonw = no console window; `start` detaches it so this window closes.
-REM Output goes to "LocalChat data\LocalChat.log". For live logs run:
-REM   venv\Scripts\python.exe -m backend.main
-start "" "venv\Scripts\pythonw.exe" -m backend.main
+REM --- The app window: unpack it on first run, and again after an update
+REM     (app\version.txt differs from the unpacked copy's) ---
+if not exist "app\LocalChat.zip" goto :launch
+fc /b app\version.txt app\LocalChat\version.txt >nul 2>&1
+if not errorlevel 1 goto :launch
+echo Unpacking the LocalChat app...
+if exist "app\LocalChat" rmdir /s /q "app\LocalChat"
+tar -xf app\LocalChat.zip -C app
+if errorlevel 1 goto :fail
+
+REM --- Launch: the app starts the Python backend itself and stops it when its
+REM     window closes. Backend output goes to "LocalChat data\LocalChat.log".
+REM     (In the source repo, without app\, use the app built from desktop\.)
+:launch
+set "APP=app\LocalChat\LocalChat.exe"
+if not exist "%APP%" set "APP=desktop\build\windows\x64\runner\Release\LocalChat.exe"
+if not exist "%APP%" goto :noapp
+start "" "%APP%"
 exit /b 0
+
+:noapp
+echo.
+echo The LocalChat app is missing (app\LocalChat.zip). Download LocalChat again,
+echo or build it from desktop\ (see desktop\README.md).
+if not defined CI pause
+exit /b 1
 
 :fail
 echo.

@@ -2,6 +2,7 @@
 
     python packaging/smoke_test.py <path-to-LocalChat-binary> [args...]
     python packaging/smoke_test.py --running   # app already started (by a launcher)
+    python packaging/smoke_test.py --running --quit   # ...then quit the desktop app
 
 Launches the frozen app headless (LOCALCHAT_NO_WINDOW=1) on a clean machine and
 checks the whole first-run path a real user hits:
@@ -117,12 +118,55 @@ def _chat() -> None:
         raise RuntimeError(f"chat did not complete (status={status}, tokens={len(tokens)})")
 
 
-def _check_running() -> int:
+def _crash_reports() -> set[str]:
+    d = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+    return {p.name for p in d.glob("*")} if d.is_dir() else set()
+
+
+def _app_running() -> bool:
+    if sys.platform == "win32":
+        out = subprocess.run(["tasklist", "/fi", "imagename eq LocalChat.exe"],
+                             capture_output=True, text=True).stdout
+        return "LocalChat.exe" in out
+    return subprocess.run(["pgrep", "-x", "LocalChat"], capture_output=True).returncode == 0
+
+
+def _quit_app() -> None:
+    """Quit the desktop app the way a user does (close the window / Cmd+Q) and
+    check it and its backend exit cleanly: the old pywebview app hung here on
+    macOS instead of exiting."""
+    before = _crash_reports()
+    if sys.platform == "win32":
+        # Without /f, taskkill sends WM_CLOSE: the same as clicking the X.
+        subprocess.run(["taskkill", "/im", "LocalChat.exe"], check=False)
+    else:
+        subprocess.run(["osascript", "-e", 'quit app "LocalChat"'], check=False)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        backend_up = True
+        try:
+            _json("GET", "/healthz")
+        except OSError:
+            backend_up = False
+        if not backend_up and not _app_running():
+            break
+        time.sleep(1)
+    else:
+        raise RuntimeError("the app or its backend was still running 30 s after quitting")
+    new = sorted(r for r in _crash_reports() - before if "LocalChat" in r or "Python" in r)
+    if new:
+        raise RuntimeError(f"crash report(s) after quitting: {new}")
+    print("[smoke] app and backend exited cleanly")
+
+
+def _check_running(quit_after: bool) -> int:
     """Check an app that something else started (e.g. Start LocalChat.*)."""
     try:
         print(f"[smoke] server up: {_wait_healthz(None, 600)}")
         _wait_model(900)
         _chat()
+        if quit_after:
+            _quit_app()
         print("[smoke] PASS")
         return 0
     except Exception as e:  # noqa: BLE001
@@ -131,8 +175,8 @@ def _check_running() -> int:
 
 
 def main() -> int:
-    if sys.argv[1:] == ["--running"]:
-        return _check_running()
+    if sys.argv[1:2] == ["--running"]:
+        return _check_running("--quit" in sys.argv[2:])
     os.environ["LOCALCHAT_NO_WINDOW"] = "1"
     os.environ["PYTHONUNBUFFERED"] = "1"  # so the app's output survives a kill
     log_path = Path(tempfile.gettempdir()) / "smoke_app.log"
