@@ -119,6 +119,9 @@ temperature = 0.7
 #   wikipedia  "Who was Niels Bohr?"                          (needs internet)
 #   pandas     "Which region had the highest revenue in sales_2025.csv?"
 #              (reads CSV/Excel files in the `data` folder; an example is included)
+#   rag        "How many vacation days do Fjordbyte employees get?"
+#              (searches PDF/Word/text files in the `rag` folder; an example
+#              handbook is included. Downloads a 35 MB search model once.)
 #
 # Small models (the default 0.6B) sometimes skip a tool or pass the wrong
 # input. Qwen3 4B (Models button in the app) is much more reliable with tools.
@@ -128,3 +131,4 @@ time = false
 weather = false
 wikipedia = false
 pandas = false
+rag = false

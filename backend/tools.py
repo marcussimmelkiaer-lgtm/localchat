@@ -39,6 +39,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import nobodywho
+
 from .config import ROOT
 from .tool_support import tool
 
@@ -234,6 +236,91 @@ def calculate(file_name: str, column: str, operation: str, group_by: str = "") -
 
 
 # ============================================================================
+#  Tool: RAG, search your own documents in the `rag` folder
+# ============================================================================
+# RAG = "retrieval-augmented generation": find the relevant passages first,
+# then let the model answer from them. Three steps:
+#
+#  1. CHUNK:  every document in the `rag` folder is split into pieces of
+#             about 200 words (a whole document wouldn't fit in the prompt).
+#  2. EMBED:  a small embedding model turns each piece into 384 numbers that
+#             describe its meaning. Texts that mean similar things get similar
+#             numbers, even with different words ("refund" ~ "money back").
+#  3. SEARCH: the question gets its 384 numbers too, and the pieces whose
+#             numbers are closest (cosine similarity: 1 = same meaning,
+#             0 = unrelated) are handed to the chat model.
+#
+# Embeddings are kept in memory and only recomputed for new or changed files,
+# so you can drop documents into the folder while the app is running.
+
+RAG_FOLDER = ROOT / "rag"
+DOCUMENT_TYPES = (".pdf", ".docx", ".txt", ".md")
+# A 35 MB embedding model, downloaded the first time a search runs.
+EMBEDDING_MODEL = "huggingface:CompendiumLabs/bge-small-en-v1.5-gguf/bge-small-en-v1.5-q8_0.gguf"
+CHUNK_WORDS = 200    # words per piece
+OVERLAP_WORDS = 40   # repeated between neighbouring pieces, so no sentence is lost at a cut
+TOP_RESULTS = 3      # how many pieces the model gets
+
+encoder = None  # loaded on first use
+index = {}      # file -> (last modified time, [(piece of text, its 384 numbers), ...])
+
+
+def read_document(path: Path) -> str:
+    if path.suffix.lower() == ".pdf":
+        from pypdf import PdfReader
+        return "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+    if path.suffix.lower() == ".docx":
+        import docx
+        return "\n".join(paragraph.text for paragraph in docx.Document(path).paragraphs)
+    return path.read_text(encoding="utf-8", errors="replace")  # .txt / .md
+
+
+def split_into_chunks(text: str) -> list[str]:
+    words = text.split()
+    step = CHUNK_WORDS - OVERLAP_WORDS
+    return [" ".join(words[i:i + CHUNK_WORDS]) for i in range(0, len(words), step)]
+
+
+def update_index() -> None:
+    global encoder
+    if encoder is None:
+        encoder = nobodywho.Encoder(EMBEDDING_MODEL)
+    files = [p for p in RAG_FOLDER.glob("*") if p.suffix.lower() in DOCUMENT_TYPES]
+    for path in list(index):
+        if path not in files:
+            del index[path]  # the file was deleted
+    for path in files:
+        modified = path.stat().st_mtime
+        if path in index and index[path][0] == modified:
+            continue  # already embedded and unchanged
+        chunks = split_into_chunks(read_document(path))
+        index[path] = (modified, list(zip(chunks, encoder.encode_batch(chunks))))
+
+
+@tool(
+    "Search the user's own documents (company handbooks, policies, procedures, "
+    "notes, reports) for passages that answer a question. Call this FIRST for "
+    "any question about the user's work, company, rules, travel, expenses, "
+    "leave or what to do in a situation, even if no document is mentioned. "
+    "Base your answer on the passages found.",
+    # No example query here: small models tend to copy an example word for word.
+    params={"question": "The user's question, in the user's own words"},
+)
+def search_documents(question: str) -> str:
+    update_index()
+    question_numbers = encoder.encode(question)
+    scored = [
+        (nobodywho.cosine_similarity(question_numbers, numbers), path.name, text)
+        for path, (_, chunks) in index.items()
+        for text, numbers in chunks
+    ]
+    if not scored:
+        return "The rag folder contains no documents."
+    best = sorted(scored, reverse=True)[:TOP_RESULTS]
+    return "\n\n".join(f"[{name}, similarity {score:.2f}]\n{text}" for score, name, text in best)
+
+
+# ============================================================================
 #  The list of tools. The names on the left are the switches in config.toml.
 # ============================================================================
 
@@ -242,4 +329,5 @@ TOOLS = {
     "weather": [get_weather],
     "wikipedia": [search_wikipedia],
     "pandas": [list_data_files, describe_table, calculate],
+    "rag": [search_documents],
 }

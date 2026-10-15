@@ -32,7 +32,7 @@ LAUNCHERS = {"windows": "Start LocalChat.bat", "mac": "Start LocalChat.command"}
 
 # Shared runtime files (repo-relative). backend/ is added from `git ls-files`
 # so caches and local junk never leak into the export.
-COMMON = ["requirements.txt", "config.example.toml", ".gitattributes", "data/sales_2025.csv"]
+COMMON = ["requirements.txt", "config.example.toml", ".gitattributes", "data/sales_2025.csv", "rag/employee_handbook.md"]
 
 
 def _git(*args: str, cwd: Path) -> str:

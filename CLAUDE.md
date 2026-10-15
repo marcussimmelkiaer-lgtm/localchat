@@ -462,6 +462,16 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    untouched; `throwOnError: false` shows bad/half-streamed LaTeX as red source. (d) **`file_uploads`**
    switch (config.toml, default `true`): hides the paperclip (`Composer allowUploads`, via `/healthz
    file_uploads`) and the `/stream` route rejects attachments with 400 when off.
+   **RAG tool** (`rag = false` switch): a deliberately minimal, dependency-free section at the end of
+   `tools.py`: read (`pypdf`/`python-docx`/text) → 200-word chunks with 40 overlap → `nobodywho.Encoder` with
+   `bge-small-en-v1.5` q8 (35 MB, loaded by `huggingface:` spec on first search, cached) → in-memory `index`
+   keyed by file path + mtime (new/changed/deleted files in `ROOT/rag/` picked up per search) →
+   `nobodywho.cosine_similarity`, top 3 chunks with file name + score. Example `rag/employee_handbook.md`
+   (fictional "Fjordbyte"), exported to slim repos. Loading the Encoder inside a tool callback while the chat
+   model generates works. Verified with the 4B, rag-only: finds vacation/WFH/travel passages; with all 5
+   tools on it under-triggers on generic-sounding questions; the 0.6B never called it. **Lesson**: a concrete
+   example in a `params` description gets copied verbatim as the argument by small models — keep params
+   generic. Python's sqlite3 has FTS5 (verified) if a no-model keyword fallback is ever wanted.
    **Found while testing (not fixed)**: Qwen3-4B + `n_ctx=16384` + `max_live_chats=3` OOMs the 8 GB GPU on the
    third conversation in a session ("Could not create context") — each cached Chat reserves its own KV cache.
 
