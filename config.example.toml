@@ -1,12 +1,45 @@
-# LocalChat configuration. Copy this file to `config.toml` and set model_path.
+# LocalChat settings.
+#
+# HOW TO EXPERIMENT: change a value below, save this file, then close LocalChat
+# and start it again. Settings are only read when the app starts.
+# Lines starting with # are comments; the app ignores them.
 
-# Absolute path to a local GGUF chat model (required to generate).
+
+# ============================================================================
+#  SYSTEM PROMPT: the model's standing instructions
+# ============================================================================
+# The model reads this before every conversation. It shapes the tone, the role,
+# and the rules it follows. Try changing it and asking the same question again.
+# Ideas: "Answer like a pirate.", "Always reply in Danish.", "Answer in one sentence."
+#
+# Rules: keep the text between the two " marks, all on ONE line.
+# If you need quotation marks inside the text, use ' instead of ".
+
+system_prompt = "You are LocalChat, a professional AI assistant for business and data analysis, running entirely on the user's own machine, so everything shared with you stays private. You help analyze uploaded files (CSV, Excel, PDF, Word), summarize documents, work through calculations, and write clear professional text. Never invent numbers, facts, or sources; if the information provided is not enough, say so. Work through calculations step by step and check the result. Give the main answer first, then the details. Be concise, use Markdown tables and bullet points where they help, and keep a neutral, professional tone. If a question is unclear, ask one short clarifying question instead of guessing."
+
+
+# ============================================================================
+#  THINKING: let the model reason out loud before answering
+# ============================================================================
+# true  = Qwen3 models first "think" step by step (shown in a collapsible box),
+#         then answer. Slower, but often better at maths and logic.
+# false = answer directly.
+
+allow_thinking = false
+
+
+# ============================================================================
+#  Technical settings (usually no need to touch these)
+# ============================================================================
+
+# Which model file to use. Filled in automatically on first launch; easier to
+# change from the "Models" button inside the app.
 # Example (macOS): model_path = "/Users/you/Library/Application Support/nobodywho/models/Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
 model_path = ""
 
 # Multimodal projector (mmproj) for a vision model. Normally leave this unset:
 # uploading an image auto-switches to the curated vision model (Qwen2.5-VL 3B)
-# for that turn — downloading it on first use — then switches back. Set it by
+# for that turn, downloading it on first use, then switches back. Set it by
 # hand only if you point model_path at a vision GGUF yourself.
 # projection_model_path = ""
 
@@ -14,30 +47,43 @@ model_path = ""
 # is chosen automatically.
 port = 8765
 
-# Generation
-# Context window (tokens). llama.cpp allocates the FULL n_ctx KV-cache upfront at
-# load, so this trades VRAM for headroom (system prompt + history + file/image
-# tokens + reply). On an 8 GB GPU: 16384 is a safe sweet spot with a 3–4B model;
-# 32768 (Qwen's native max) risks OOM there — drop to 8192 if a load fails.
+# Context window (tokens): how much text the model can "see" at once (system
+# prompt + chat history + uploaded files + its reply). llama.cpp reserves the
+# memory for all of it upfront, so bigger = more memory. 16384 is a safe default;
+# drop to 8192 if a model fails to load.
 n_ctx = 16384
 use_gpu = true                          # use the GPU (Metal on macOS) if available; false = CPU only
-allow_thinking = false                  # reasoning models (Qwen3): keep <think> blocks out of chat
-system_prompt = """
-You are LocalChat, a professional AI assistant for business and data analysis, running entirely on the user's own machine. Treat everything shared with you as private and confidential — it never leaves the device.
-
-You help with analyzing uploaded files (CSV, Excel, PDF, Word), summarizing documents, reasoning through quantitative problems, and clear professional writing (emails, reports, briefs).
-
-Work by these principles:
-- Accuracy first. Never invent numbers, facts, figures, or sources. Base claims only on the data or context provided; if it is insufficient to answer, say so and state what is missing.
-- For any calculation, work step by step and verify the result. Show the key figures behind a conclusion, and note assumptions and units.
-- Lead with the answer or main takeaway, then the supporting detail.
-- Be concise and well-organized. Use Markdown: tables for tabular comparisons, bullet points for lists, short headers for longer answers.
-- If a request is ambiguous, ask one brief clarifying question instead of guessing.
-- Keep a neutral, professional tone suitable for the workplace."""
 max_live_chats = 3
 
+
+# ============================================================================
+#  TEMPERATURE: how creative / random the answers are
+# ============================================================================
+# The model writes one word-piece at a time. At each step it has a list of
+# possible next words, each with a probability. Temperature controls how it
+# picks from that list:
+#
+#   0.0       always picks the single most likely word. Same question gives
+#             (almost) the same answer every time. Precise but can be dull.
+#   0.2-0.5   focused and factual. Good for data analysis and calculations.
+#   0.7       balanced (the default). Natural-sounding, still sensible.
+#   1.0-1.5   more varied and creative. Good for brainstorming and stories,
+#             but more likely to wander off or make things up.
+#   2.0       very random; often turns into nonsense. Fun to try once!
+#
+# Experiment: ask the same question several times (use the regenerate button)
+# at 0.0 and then at 1.5, and compare how much the answers change.
+
 [sampler]
-preset = "temperature"                  # temperature | top_k | top_p | greedy | default
+preset = "temperature"
 temperature = 0.7
+
+# Advanced: instead of temperature you can try another sampling method by
+# changing preset above to one of these (only one method is used at a time):
+#   "greedy"  always the most likely word (same as temperature 0)
+#   "top_k"   pick randomly among only the k most likely words  -> set top_k = 40
+#   "top_p"   pick among the most likely words that together make up p of the
+#             probability (0.95 = 95%)                         -> set top_p = 0.95
+#   "default" the model's built-in sampler settings
 # top_k = 40
 # top_p = 0.95
