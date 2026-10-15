@@ -59,6 +59,9 @@ download, CPU generation).
 
 ## Configuration (`config.toml`)
 
+The template (`backend/config.example.toml`) only lists the settings worth
+experimenting with; the others below can be added by hand and default sensibly.
+
 | Key | Meaning |
 | --- | --- |
 | `model_path` | Absolute path to a local `.gguf` chat model (required) |

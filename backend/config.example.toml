@@ -1,71 +1,16 @@
-# LocalChat settings.
-#
-# HOW TO EXPERIMENT: change a value below, save this file, then close LocalChat
-# and start it again. Settings are only read when the app starts.
-# Lines starting with # are comments; the app ignores them.
+# LocalChat settings. Change a value, save, then restart LocalChat.
 
-
-# ============================================================================
-#  SYSTEM PROMPT: the model's standing instructions
-# ============================================================================
-# The model reads this before every conversation. It shapes the tone, the role,
-# and the rules it follows. Try changing it and asking the same question again.
-# Ideas: "Answer like a pirate.", "Always reply in Danish.", "Answer in one sentence."
-#
-# Rules: keep the text between the two " marks, all on ONE line.
-# If you need quotation marks inside the text, use ' instead of ".
-
+# The model's standing instructions. Keep it on one line; use ' for quotes inside.
 system_prompt = "You are LocalChat, a professional AI assistant for business and data analysis, running entirely on the user's own machine, so everything shared with you stays private. You help analyze uploaded files (CSV, Excel, PDF, Word), summarize documents, work through calculations, and write clear professional text. Never invent numbers, facts, or sources; if the information provided is not enough, say so. Work through calculations step by step and check the result. Give the main answer first, then the details. Be concise, use Markdown tables and bullet points where they help, and keep a neutral, professional tone. If a question is unclear, ask one short clarifying question instead of guessing."
 
-
-# ============================================================================
-#  THINKING: let the model reason out loud before answering
-# ============================================================================
-# true  = Qwen3 models first "think" step by step (shown in a collapsible box),
-#         then answer. Slower, but often better at maths and logic.
-# false = answer directly.
-
+# Let the model think step by step before answering.
 allow_thinking = false
 
-
-# ============================================================================
-#  FILE UPLOADS: the paperclip button in the message box
-# ============================================================================
-# true  = you can attach CSV, Excel, PDF, Word files or images to a message.
-#         The file's text is quietly added to your question, so the model can
-#         read it (images switch to a vision model for that answer).
-# false = the paperclip disappears. Handy to show the difference: ask about a
-#         document without it, then switch uploads on and attach the file.
-
+# Show the paperclip button for attaching files.
 file_uploads = true
 
-
-# ============================================================================
-#  Technical settings (usually no need to touch these)
-# ============================================================================
-
-# Which model file to use. Filled in automatically on first launch; easier to
-# change from the "Models" button inside the app.
-# Example (macOS): model_path = "/Users/you/Library/Application Support/nobodywho/models/Qwen/Qwen3-4B-GGUF/Qwen3-4B-Q4_K_M.gguf"
+# Filled in automatically; easier to change with the Models button in the app.
 model_path = ""
-
-# Multimodal projector (mmproj) for a vision model. Normally leave this unset:
-# uploading an image auto-switches to the curated vision model (Qwen2.5-VL 3B)
-# for that turn, downloading it on first use, then switches back. Set it by
-# hand only if you point model_path at a vision GGUF yourself.
-# projection_model_path = ""
-
-# Local server. Bound to 127.0.0.1 only. If the port is busy, an ephemeral one
-# is chosen automatically.
-port = 8765
-
-# Context window (tokens): how much text the model can "see" at once (system
-# prompt + chat history + uploaded files + its reply). llama.cpp reserves the
-# memory for all of it upfront, so bigger = more memory. 16384 is a safe default;
-# drop to 8192 if a model fails to load.
-n_ctx = 16384
-use_gpu = true                          # use the GPU (Metal on macOS) if available; false = CPU only
-max_live_chats = 3
 
 
 # ============================================================================
@@ -90,42 +35,8 @@ max_live_chats = 3
 preset = "temperature"
 temperature = 0.7
 
-# Advanced: instead of temperature you can try another sampling method by
-# changing preset above to one of these (only one method is used at a time):
-#   "greedy"  always the most likely word (same as temperature 0)
-#   "top_k"   pick randomly among only the k most likely words  -> set top_k = 40
-#   "top_p"   pick among the most likely words that together make up p of the
-#             probability (0.95 = 95%)                         -> set top_p = 0.95
-#   "default" the model's built-in sampler settings
-# top_k = 40
-# top_p = 0.95
 
-
-# ============================================================================
-#  TOOLS: let the model use Python functions (all OFF by default)
-# ============================================================================
-# A language model only knows what it learned in training: it can't tell the
-# time, check the weather, or reliably add up a spreadsheet. A "tool" is a
-# Python function it may ask the app to run. It then answers using the result.
-# The tools themselves live in backend/tools.py, which also explains how to
-# add your own.
-#
-# Try this: ask a question below with the tool OFF (the model guesses or
-# refuses), then set it to true, restart, and ask again. A "Used tool" box
-# above the answer shows what the model asked for and what it got back.
-#
-#   time       "What time is it in Tokyo?"
-#   weather    "Do I need an umbrella in Copenhagen today?"   (needs internet)
-#   wikipedia  "Who was Niels Bohr?"                          (needs internet)
-#   pandas     "Which region had the highest revenue in sales_2025.csv?"
-#              (reads CSV/Excel files in the `data` folder; an example is included)
-#   rag        "How many vacation days do Fjordbyte employees get?"
-#              (searches PDF/Word/text files in the `rag` folder; an example
-#              handbook is included. Downloads a 35 MB search model once.)
-#
-# Small models (the default 0.6B) sometimes skip a tool or pass the wrong
-# input. Qwen3 4B (Models button in the app) is much more reliable with tools.
-
+# Tools the model can use (see backend/tools.py). Restart after switching.
 [tools]
 time = false
 weather = false

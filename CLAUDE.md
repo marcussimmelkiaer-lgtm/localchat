@@ -507,6 +507,10 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    once, and `export_workshop.py` stages with `core.autocrlf=false` so the `.bat` blob stays CRLF. **When syncing
    the clones, also commit with `git -c core.autocrlf=false`.** Verified: fresh Windows export → launcher → smoke
    test PASS; only untracked file afterwards was a test log; legacy DB/uploads migration.
+   **Config template slimmed** (same day, user request): `backend/config.example.toml` keeps only system_prompt,
+   allow_thinking, file_uploads, model_path, `[sampler]` (only temperature keeps its long explanation) and `[tools]`;
+   port/n_ctx/use_gpu/max_live_chats/projection_model_path still work if added by hand (`Config` default `n_ctx`
+   raised to 16384 to match). The user's two local config.toml files were regenerated from it, values preserved.
 
 ## Token throughput theory (asked but NOT implemented — for future reference)
 

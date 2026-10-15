@@ -27,7 +27,7 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8765
     system_prompt: str | None = None
-    n_ctx: int = 4096
+    n_ctx: int = 16384
     use_gpu: bool = True
     # For reasoning models (e.g. Qwen3): keep <think> blocks out of the chat.
     allow_thinking: bool = False
