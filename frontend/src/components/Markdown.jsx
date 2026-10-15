@@ -1,11 +1,19 @@
 import { useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import CodeBlock from './CodeBlock'
+import { normalizeMath } from '../lib/math'
+
+const remarkPlugins = [remarkGfm, remarkMath]
+// Bad or half-streamed LaTeX renders as red source text instead of throwing.
+const rehypePlugins = [[rehypeKatex, { throwOnError: false, strict: 'ignore' }]]
 
 // Renders assistant markdown. Fenced code blocks route to <CodeBlock> (which
 // stays plain mono while `streaming` and highlights on completion); inline code
-// renders as a styled <code>.
+// renders as a styled <code>. Maths ($…$, $$…$$, \(…\), \[…\]) renders with KaTeX.
 export default function Markdown({ content, streaming }) {
   const components = useMemo(
     () => ({
@@ -34,8 +42,12 @@ export default function Markdown({ content, streaming }) {
 
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-        {content || ''}
+      <ReactMarkdown
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={components}
+      >
+        {normalizeMath(content)}
       </ReactMarkdown>
     </div>
   )

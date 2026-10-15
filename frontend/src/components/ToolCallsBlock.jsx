@@ -3,7 +3,7 @@ import { ChevronDownIcon, WrenchIcon } from './icons'
 
 // Shows the tools the model called for this answer (see backend/tools.py):
 // what it asked for, and what the tool returned. Collapsed by default; while a
-// tool runs, the header pulses.
+// tool runs it shows a spinner and "Using tool".
 
 function formatArgs(args) {
   const entries = Object.entries(args || {})
@@ -18,20 +18,26 @@ function ToolCall({ call }) {
   const args = formatArgs(call.args)
 
   return (
-    <div className="overflow-hidden rounded-bubble border border-line bg-bubble">
+    <div
+      className={`overflow-hidden rounded-bubble border bg-bubble transition-colors ${
+        running ? 'border-muted' : 'border-line'
+      }`}
+    >
       <button
         onClick={() => setOpen((o) => !o)}
-        className="focus-ring flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12px] text-muted transition hover:text-ink"
+        className={`focus-ring flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[12px] transition hover:text-ink ${
+          running ? 'text-ink' : 'text-muted'
+        }`}
         aria-expanded={open}
       >
         <span className="flex min-w-0 items-center gap-1.5">
           {running ? (
-            <span className="h-1.5 w-1.5 shrink-0 animate-dot-pulse rounded-full bg-muted" />
+            <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-line border-t-ink" />
           ) : (
             <WrenchIcon width={13} height={13} className="shrink-0" />
           )}
           <span className="shrink-0 font-medium uppercase tracking-wide text-[11px]">
-            {running ? 'Using tool' : failed ? 'Tool failed' : 'Used tool'}
+            {running ? 'Using tool…' : failed ? 'Tool failed' : 'Used tool'}
           </span>
           <span className="truncate font-mono text-ink">
             {call.name}

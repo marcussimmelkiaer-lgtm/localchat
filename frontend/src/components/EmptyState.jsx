@@ -4,7 +4,7 @@ import logoUrl from '../assets/logo-nobodywho.png'
 // Cold-start: a quiet centered greeting with the composer mid-screen. Once the
 // conversation has messages, ChatPane swaps this for the message list + a
 // bottom-docked composer.
-export default function EmptyState({ onSend, onStop, isStreaming, disabled, placeholder }) {
+export default function EmptyState({ onSend, onStop, isStreaming, disabled, allowUploads, placeholder }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 pb-16">
       <div className="w-full max-w-content">
@@ -21,6 +21,7 @@ export default function EmptyState({ onSend, onStop, isStreaming, disabled, plac
           onStop={onStop}
           isStreaming={isStreaming}
           disabled={disabled}
+          allowUploads={allowUploads}
           placeholder={placeholder}
           autoFocus
         />

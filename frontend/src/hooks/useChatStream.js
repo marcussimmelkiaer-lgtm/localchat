@@ -9,6 +9,10 @@ import { newId } from '../lib/id'
 // to keep its callbacks stable.
 
 // Read a File into bare base64 (strips the "data:<mime>;base64," prefix).
+// Fast tools (e.g. the clock) finish in milliseconds; keep "Using tool" on
+// screen at least this long so people can actually see it happen.
+const MIN_TOOL_RUNNING_MS = 1200
+
 function readFileBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -34,6 +38,7 @@ export function useChatStream(convo) {
 
   const bufferRef = useRef('')
   const rafRef = useRef(0)
+  const toolSeenRef = useRef({}) // tool call id -> when it started running
 
   const flush = useCallback(() => {
     rafRef.current = 0
@@ -94,10 +99,19 @@ export function useChatStream(convo) {
           },
           onTool: (call) => {
             // Each call arrives twice (running, then done/error): upsert by id.
-            convoRef.current.updateMessage(convId, assistantId, (m) => {
-              const calls = (m.toolCalls || []).filter((c) => c.id !== call.id)
-              return { toolCalls: [...calls, call].sort((a, b) => a.id - b.id) }
-            })
+            const upsert = () =>
+              convoRef.current.updateMessage(convId, assistantId, (m) => {
+                const calls = (m.toolCalls || []).filter((c) => c.id !== call.id)
+                return { toolCalls: [...calls, call].sort((a, b) => a.id - b.id) }
+              })
+            const seen = toolSeenRef.current
+            if (call.status === 'running') {
+              seen[call.id] = Date.now()
+              return upsert()
+            }
+            const wait = seen[call.id] ? MIN_TOOL_RUNNING_MS - (Date.now() - seen[call.id]) : 0
+            if (wait > 0) setTimeout(upsert, wait)
+            else upsert()
           },
           onStats: (stats) => {
             convoRef.current.updateMessage(convId, assistantId, { stats })

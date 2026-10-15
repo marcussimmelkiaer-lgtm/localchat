@@ -108,6 +108,7 @@ export default function App() {
           modelReady={modelReady}
           modelError={modelError}
           downloadPct={downloadPct}
+          fileUploads={health?.fileUploads !== false}
           serverDown={serverDown}
           sidebarCollapsed={collapsed}
           onExpandSidebar={() => setCollapsed(false)}

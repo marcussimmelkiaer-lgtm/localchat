@@ -271,3 +271,14 @@ textarea {
 .hljs-strong {
   font-weight: 700;
 }
+
+/* KaTeX maths: wide display equations scroll instead of overflowing. */
+.md .katex-display {
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+.md .katex {
+  font-size: 1.08em;
+}

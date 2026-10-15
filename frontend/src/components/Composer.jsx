@@ -28,7 +28,15 @@ function FileThumb({ file }) {
   return <FileIcon width={14} height={14} className="shrink-0 text-muted" />
 }
 
-export default function Composer({ onSend, onStop, isStreaming, disabled, placeholder, autoFocus }) {
+export default function Composer({
+  onSend,
+  onStop,
+  isStreaming,
+  disabled,
+  allowUploads = true,
+  placeholder,
+  autoFocus,
+}) {
   const [value, setValue] = useState('')
   const [files, setFiles] = useState([])
   const taRef = useRef(null)
@@ -107,6 +115,9 @@ export default function Composer({ onSend, onStop, isStreaming, disabled, placeh
         </div>
       )}
       <div className="flex items-end gap-2 px-3 py-2.5">
+        {/* Hidden when file_uploads = false in config.toml. */}
+        {allowUploads && (
+          <>
         <input
           ref={fileRef}
           type="file"
@@ -127,6 +138,8 @@ export default function Composer({ onSend, onStop, isStreaming, disabled, placeh
         >
           <PaperclipIcon width={18} height={18} />
         </button>
+          </>
+        )}
         <textarea
           ref={taRef}
           rows={1}

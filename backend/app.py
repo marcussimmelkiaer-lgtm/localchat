@@ -45,6 +45,7 @@ def create_app(cfg: Config) -> FastAPI:
             # Download/switch progress, so a first-run model download started by
             # the backend itself (packaged builds) can show a % in the UI.
             "model_task": eng.task_status(),
+            "file_uploads": eng.cfg.file_uploads,
         }
 
     @app.post("/api/warmup")

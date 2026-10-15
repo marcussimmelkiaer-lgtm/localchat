@@ -45,6 +45,7 @@ and restart LocalChat. Each setting is explained in the file:
 - **System prompt**: the model's standing instructions (its role, tone, rules).
 - **Temperature**: how predictable or creative the answers are.
 - **Thinking**: let the model reason step by step before it answers.
+- **File uploads**: show or hide the paperclip button for attaching files.
 - **Tools**: let the model call Python functions to get the time, the weather,
   a Wikipedia article, or exact numbers from a spreadsheet in the `data` folder.
   They're all off at first, so ask a question, switch the tool on, and ask

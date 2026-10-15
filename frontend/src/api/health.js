@@ -1,5 +1,5 @@
 // Probes the local backend's /healthz to learn whether the model is ready.
-// Shape: { available, modelLoaded, modelError, modelTask }
+// Shape: { available, modelLoaded, modelError, modelTask, fileUploads }
 
 let cached = null
 let inflight = null
@@ -14,9 +14,10 @@ async function probe() {
       modelLoaded: !!data.model_loaded,
       modelError: data.model_error || null,
       modelTask: data.model_task || null,
+      fileUploads: data.file_uploads !== false,
     }
   } catch {
-    return { available: false, modelLoaded: false, modelError: null, modelTask: null }
+    return { available: false, modelLoaded: false, modelError: null, modelTask: null, fileUploads: true }
   }
 }
 

@@ -29,6 +29,18 @@ allow_thinking = false
 
 
 # ============================================================================
+#  FILE UPLOADS: the paperclip button in the message box
+# ============================================================================
+# true  = you can attach CSV, Excel, PDF, Word files or images to a message.
+#         The file's text is quietly added to your question, so the model can
+#         read it (images switch to a vision model for that answer).
+# false = the paperclip disappears. Handy to show the difference: ask about a
+#         document without it, then switch uploads on and attach the file.
+
+file_uploads = true
+
+
+# ============================================================================
 #  Technical settings (usually no need to touch these)
 # ============================================================================
 

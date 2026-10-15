@@ -452,6 +452,18 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    baseline invents a time; 0.6B uses the time tool but skips weather/Wikipedia). Tool descriptions and error
    messages are prompt engineering: `max` vs `sum` confusion was fixed by describing operations, and a
    wrong-column error that says "Call calculate again with one of these" makes the 4B self-correct.
+   **Follow-ups (same day)**: (a) the "Using tool…" state (spinner) is held on screen ≥1.2 s
+   (`MIN_TOOL_RUNNING_MS` in `useChatStream`) because fast tools send running+done in one SSE chunk and React
+   batched them, so it was never visible; (b) the route inserts a `
+
+` token when a tool starts after some
+   text, so a "Let me check…" preamble and the answer don't run together; (c) **maths rendering**:
+   `remark-math` + `rehype-katex` (+ `katex` CSS/fonts bundled offline by Vite) in `Markdown.jsx`, with
+   `lib/math.js normalizeMath` first converting `\[…\]` / same-line `$$…$$` to display blocks and `\(…\)` to
+   `$…$`, and escaping currency (`$5`, `$1,200.`, `**$59,334**`) so prices don't become maths; code spans are
+   untouched; `throwOnError: false` shows bad/half-streamed LaTeX as red source. (d) **`file_uploads`**
+   switch (config.toml, default `true`): hides the paperclip (`Composer allowUploads`, via `/healthz
+   file_uploads`) and the `/stream` route rejects attachments with 400 when off.
    **Found while testing (not fixed)**: Qwen3-4B + `n_ctx=16384` + `max_live_chats=3` OOMs the 8 GB GPU on the
    third conversation in a session ("Could not create context") — each cached Chat reserves its own KV cache.
 

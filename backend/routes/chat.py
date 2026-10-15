@@ -19,6 +19,11 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 async def stream(req: ChatStreamRequest, request: Request):
     if not store.get_conversation(req.conversation_id):
         raise HTTPException(status_code=404, detail="conversation not found")
+    if req.attachments and not request.app.state.engine.cfg.file_uploads:
+        raise HTTPException(
+            status_code=400,
+            detail="File uploads are switched off (file_uploads = false in config.toml).",
+        )
     # Decode + extract text from any attached files. We store the user's typed
     # text as `content` (what the bubble shows) and the extracted text inside the
     # attachment metadata; prompt_from_store folds it in front of the prompt so
@@ -111,6 +116,11 @@ def _sse(request: Request, conv_id: str, assistant_id: str):
                     state["stats"] = data
                     yield {"event": "stats", "data": json.dumps(data)}
                 elif kind == "tool":
+                    # Text before a tool call ("Let me check…") and the answer
+                    # after it stream as one string; keep them separate paragraphs.
+                    if data["status"] == "running" and acc and not "".join(acc).endswith("\n\n"):
+                        acc.append("\n\n")
+                        yield {"event": "token", "data": json.dumps({"text": "\n\n"})}
                     tool_calls[data["id"]] = data
                     yield {"event": "tool", "data": json.dumps(data, default=str)}
                 elif kind == "error":

@@ -28,6 +28,8 @@ class Config:
     use_gpu: bool = True
     # For reasoning models (e.g. Qwen3): keep <think> blocks out of the chat.
     allow_thinking: bool = False
+    # Paperclip upload button (files folded into the prompt, images via vision).
+    file_uploads: bool = True
     sampler: dict = field(default_factory=lambda: {"preset": "temperature", "temperature": 0.7})
     max_live_chats: int = 3
     # [tools] switches from config.toml, e.g. {"weather": True}. See backend/tools.py.
@@ -62,6 +64,7 @@ def load_config() -> Config:
     cfg.n_ctx = int(data.get("n_ctx", cfg.n_ctx))
     cfg.use_gpu = _as_bool(data.get("use_gpu", cfg.use_gpu), True)
     cfg.allow_thinking = _as_bool(data.get("allow_thinking", cfg.allow_thinking), False)
+    cfg.file_uploads = _as_bool(data.get("file_uploads", cfg.file_uploads), True)
     cfg.max_live_chats = max(1, int(data.get("max_live_chats", cfg.max_live_chats)))
     if data.get("db_path"):
         cfg.db_path = data["db_path"]

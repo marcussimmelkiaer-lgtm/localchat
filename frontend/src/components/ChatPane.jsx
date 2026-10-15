@@ -21,6 +21,7 @@ export default function ChatPane({
   modelReady,
   modelError,
   downloadPct,
+  fileUploads,
   serverDown,
   sidebarCollapsed,
   onExpandSidebar,
@@ -78,6 +79,7 @@ export default function ChatPane({
           onStop={onStop}
           isStreaming={isStreaming}
           disabled={blocked}
+          allowUploads={fileUploads}
           placeholder={placeholder}
         />
       ) : (
@@ -90,6 +92,7 @@ export default function ChatPane({
                 onStop={onStop}
                 isStreaming={isStreaming}
                 disabled={blocked}
+                allowUploads={fileUploads}
                 placeholder={placeholder}
                 autoFocus
               />
