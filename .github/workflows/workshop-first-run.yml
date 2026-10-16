@@ -67,6 +67,20 @@ jobs:
           chmod +x "Start LocalChat.command"
           "./Start LocalChat.command"
 
+      - name: Screenshot the app window
+        if: matrix.target == 'mac'
+        shell: bash
+        run: |
+          sleep 20
+          mkdir -p "$RUNNER_TEMP/shots"
+          screencapture -x "$RUNNER_TEMP/shots/macos-app.png"
+
+      - uses: actions/upload-artifact@v5
+        if: matrix.target == 'mac'
+        with:
+          name: screenshot-macos
+          path: ${{ runner.temp }}/shots/
+
       - name: App loads the model, chats, and quits cleanly
         if: matrix.target == 'mac'
         shell: bash

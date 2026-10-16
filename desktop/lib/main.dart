@@ -7,6 +7,7 @@ import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'api.dart';
 import 'backend.dart';
@@ -14,9 +15,21 @@ import 'state.dart';
 import 'ui/chat.dart';
 import 'ui/sidebar.dart';
 import 'ui/theme.dart';
+import 'ui/title_bar.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await windowManager.ensureInitialized();
+  if (Platform.isWindows) {
+    // The app draws its own, taller title bar (ui/title_bar.dart).
+    await windowManager.waitUntilReadyToShow(
+      const WindowOptions(titleBarStyle: TitleBarStyle.hidden, minimumSize: Size(720, 520)),
+      () async {
+        await windowManager.show();
+        await windowManager.focus();
+      },
+    );
+  }
   runApp(const LocalChatApp());
 }
 
@@ -73,11 +86,18 @@ class _LocalChatAppState extends State<LocalChatApp> {
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       home: Scaffold(
-        body: _startError != null
-            ? _StartError(error: _startError!, onRetry: _start)
-            : _state == null
-                ? const _Starting()
-                : HomeScreen(state: _state!),
+        body: Column(
+          children: [
+            const TitleBar(),
+            Expanded(
+              child: _startError != null
+                  ? _StartError(error: _startError!, onRetry: _start)
+                  : _state == null
+                      ? const _Starting()
+                      : HomeScreen(state: _state!),
+            ),
+          ],
+        ),
       ),
     );
   }
