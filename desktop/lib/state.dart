@@ -122,6 +122,7 @@ class AppState extends ChangeNotifier {
   }
 
   DateTime _lastWarmup = DateTime.fromMillisecondsSinceEpoch(0);
+  int _healthFailures = 0;
 
   @override
   void dispose() {
@@ -135,7 +136,18 @@ class AppState extends ChangeNotifier {
   void _pollHealth() {
     _healthTimer?.cancel();
     Future<void> tick() async {
-      final h = await api.health();
+      var h = await api.health();
+      // One failed check is not "server down" (a connection hiccup); only
+      // report it after 3 in a row, ~2 s. Meanwhile keep the last known state.
+      if (!h.available) {
+        _healthFailures++;
+        if (_healthFailures < 3) {
+          _healthTimer = Timer(const Duration(milliseconds: 700), tick);
+          return;
+        }
+      } else {
+        _healthFailures = 0;
+      }
       final justLoaded = h.modelLoaded && !health.modelLoaded;
       health = h;
       notifyListeners();

@@ -100,7 +100,13 @@ def main():
     port = _pick_port(cfg.host, cfg.port)
     app = create_app(cfg)
 
-    server = uvicorn.Server(uvicorn.Config(app, host=cfg.host, port=port, log_level="warning", timeout_graceful_shutdown=5))
+    # timeout_keep_alive: the desktop app polls every few seconds over a reused
+    # connection; uvicorn's default (5 s) closed it just as the next poll went
+    # out, which showed up as random "Cannot reach the local server" flashes.
+    server = uvicorn.Server(uvicorn.Config(
+        app, host=cfg.host, port=port, log_level="warning",
+        timeout_keep_alive=120, timeout_graceful_shutdown=5,
+    ))
     app.state.server = server  # POST /api/shutdown sets server.should_exit
 
     parent = os.environ.get("LOCALCHAT_PARENT_PID")

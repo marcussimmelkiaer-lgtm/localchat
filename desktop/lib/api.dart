@@ -56,14 +56,28 @@ class Api {
   Uri attachmentUrl(String messageId, int index) => _u('/api/attachments/$messageId/$index');
 
   Future<dynamic> _send(String method, String path, [Object? body, Duration? timeout]) async {
-    final req = http.Request(method, _u(path));
-    if (body != null) {
-      req.headers['Content-Type'] = 'application/json';
-      req.body = jsonEncode(body);
+    http.Request build() {
+      final req = http.Request(method, _u(path));
+      if (body != null) {
+        req.headers['Content-Type'] = 'application/json';
+        req.body = jsonEncode(body);
+      }
+      return req;
     }
-    final res = await http.Response.fromStream(
-      await _client.send(req).timeout(timeout ?? const Duration(seconds: 15)),
-    );
+
+    Future<http.Response> once() async => http.Response.fromStream(
+          await _client.send(build()).timeout(timeout ?? const Duration(seconds: 15)),
+        );
+
+    http.Response res;
+    try {
+      res = await once();
+    } on http.ClientException {
+      // A reused connection the server had just closed. Safe to repeat a GET
+      // (it changes nothing); other requests surface the error.
+      if (method != 'GET') rethrow;
+      res = await once();
+    }
     final text = utf8.decode(res.bodyBytes);
     final data = text.isEmpty ? null : jsonDecode(text);
     if (res.statusCode >= 400) throw ApiError(_detail(data, res.statusCode));
