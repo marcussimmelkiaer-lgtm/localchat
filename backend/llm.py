@@ -115,6 +115,12 @@ class NobodyWhoEngine:
     def model_loaded(self) -> bool:
         return self._loaded.is_set()
 
+    @property
+    def native_lock(self) -> threading.Lock:
+        """Held while a model loads; other nobodywho calls that can run beside a
+        load (listing the model cache) take it too, so they never overlap."""
+        return self._model_lock
+
     def current_model(self) -> dict:
         """The active model as {path, name, exists}. Cheap; doesn't touch weights."""
         path = self.cfg.model_path
@@ -297,6 +303,7 @@ class NobodyWhoEngine:
                 self._ensure_model()
             except Exception as e:  # noqa: BLE001
                 self.model_error = str(e)
+                print(f"[llm] model load failed: {e}", flush=True)
             finally:
                 self._warming = False
 
@@ -338,10 +345,14 @@ class NobodyWhoEngine:
                 # A vision model needs its mmproj; text models pass None (ignored).
                 if self.cfg.projection_model_path:
                     kwargs["projection_model_path"] = self.cfg.projection_model_path
+                print(f"[llm] loading model {os.path.basename(self.cfg.model_path)} "
+                      f"(gpu={self.cfg.use_gpu})", flush=True)
+                started = time.monotonic()
                 model = nobodywho.Model(self.cfg.model_path, **kwargs)
                 self._model = model
                 self._loaded.set()
                 self.model_error = None
+                print(f"[llm] model loaded in {time.monotonic() - started:.1f}s", flush=True)
         return self._model
 
     def _build_sampler(self):

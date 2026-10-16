@@ -57,13 +57,16 @@ def _wait_healthz(proc, seconds: int) -> dict:
     raise RuntimeError("server never answered /healthz")
 
 
-def _wait_model(seconds: int) -> None:
-    try:
-        _json("POST", "/api/warmup")
-    except OSError as e:
-        # The load it starts can grab the GIL before this response is sent;
-        # the load still runs, so carry on and poll /healthz below.
-        print(f"[smoke] /api/warmup slow to answer ({e}); polling anyway")
+def _wait_model(seconds: int, kick: bool = True) -> None:
+    """Wait until the model is loaded. kick=False: don't start the load here —
+    the desktop app must load it by itself (a real user never calls warmup)."""
+    if kick:
+        try:
+            _json("POST", "/api/warmup")
+        except OSError as e:
+            # The load it starts can grab the GIL before this response is sent;
+            # the load still runs, so carry on and poll /healthz below.
+            print(f"[smoke] /api/warmup slow to answer ({e}); polling anyway")
     last = None
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -163,7 +166,7 @@ def _check_running(quit_after: bool) -> int:
     """Check an app that something else started (e.g. Start LocalChat.*)."""
     try:
         print(f"[smoke] server up: {_wait_healthz(None, 600)}")
-        _wait_model(900)
+        _wait_model(300, kick=False)
         _chat()
         if quit_after:
             _quit_app()

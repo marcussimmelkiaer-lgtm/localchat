@@ -115,10 +115,13 @@ class AppState extends ChangeNotifier {
     ready = true;
     notifyListeners();
     // Load the model in the background now the UI is up; poll until ready.
+    // The model list is fetched once the model has loaded (see _pollHealth).
+    _lastWarmup = DateTime.now();
     unawaited(api.warmup());
     _pollHealth();
-    unawaited(refreshModels());
   }
+
+  DateTime _lastWarmup = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void dispose() {
@@ -133,12 +136,21 @@ class AppState extends ChangeNotifier {
     _healthTimer?.cancel();
     Future<void> tick() async {
       final h = await api.health();
-      // The model list can time out while a big model loads (the backend is
-      // busy); fetch it again once the model is ready.
       final justLoaded = h.modelLoaded && !health.modelLoaded;
       health = h;
       notifyListeners();
-      if (justLoaded || (h.available && models == null)) unawaited(refreshModels());
+      // Fetch the model list only once the model is loaded: listing the model
+      // cache while a model loads can stall the backend.
+      if (h.modelLoaded && (justLoaded || models == null)) unawaited(refreshModels());
+      // Not loaded, not loading anything we know of, no error: ask again (the
+      // backend ignores this while a load is already running). Covers a lost
+      // first request, so the app never sits on "Preparing model…".
+      final idle = h.taskStatus != 'downloading' && h.taskStatus != 'loading' && !task.busy;
+      if (h.available && !h.modelLoaded && h.modelError == null && idle &&
+          DateTime.now().difference(_lastWarmup) > const Duration(seconds: 5)) {
+        _lastWarmup = DateTime.now();
+        unawaited(api.warmup());
+      }
       final settled = h.available && (h.modelLoaded || h.modelError != null) && !task.busy;
       _healthTimer = Timer(Duration(milliseconds: settled ? 5000 : 600), tick);
     }

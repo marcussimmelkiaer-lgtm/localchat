@@ -16,7 +16,10 @@ def list_models(request: Request):
     GGUFs (including custom downloads not in the catalog)."""
     eng = request.app.state.engine
     active = eng.current_model()
-    data = models_catalog.build_catalog(active.get("path"))
+    # Listing the cache calls into nobodywho; never at the same time as a model
+    # load (which holds the GIL inside nobodywho). Waits for a load to finish.
+    with eng.native_lock:
+        data = models_catalog.build_catalog(active.get("path"))
     return {"active": active, **data}
 
 
@@ -76,7 +79,9 @@ def delete_model(req: DeleteModelRequest, request: Request):
         except OSError:
             pass
 
-    if not models_catalog.is_cached_path(path):
+    with eng.native_lock:
+        cached = models_catalog.is_cached_path(path)
+    if not cached:
         raise HTTPException(status_code=400, detail="Not a known cached model file.")
 
     try:
@@ -85,4 +90,6 @@ def delete_model(req: DeleteModelRequest, request: Request):
         raise HTTPException(status_code=500, detail=f"Could not delete: {e}")
 
     active = eng.current_model()
-    return {"ok": True, "active": active, **models_catalog.build_catalog(active.get("path"))}
+    with eng.native_lock:
+        data = models_catalog.build_catalog(active.get("path"))
+    return {"ok": True, "active": active, **data}
