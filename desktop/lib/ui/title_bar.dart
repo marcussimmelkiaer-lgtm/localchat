@@ -1,5 +1,5 @@
-// The window's top bar, drawn by the app so it matches the app's colours and is
-// taller than the system one.
+// The window's top bar (the one you drag the window by), drawn by the app in
+// the app's white and taller than the system one.
 //
 // Windows: the native title bar is hidden (window_manager, see main.dart) and
 // this bar provides dragging (double-click maximizes) and minimize / maximize /
@@ -108,10 +108,7 @@ class _Bar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: height,
-      decoration: const BoxDecoration(
-        color: C.ground2,
-        border: Border(bottom: BorderSide(color: C.line)),
-      ),
+      color: C.ground, // the same white as the chat area
       child: child,
     );
   }
