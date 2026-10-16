@@ -133,8 +133,12 @@ class AppState extends ChangeNotifier {
     _healthTimer?.cancel();
     Future<void> tick() async {
       final h = await api.health();
+      // The model list can time out while a big model loads (the backend is
+      // busy); fetch it again once the model is ready.
+      final justLoaded = h.modelLoaded && !health.modelLoaded;
       health = h;
       notifyListeners();
+      if (justLoaded || (h.available && models == null)) unawaited(refreshModels());
       final settled = h.available && (h.modelLoaded || h.modelError != null) && !task.busy;
       _healthTimer = Timer(Duration(milliseconds: settled ? 5000 : 600), tick);
     }
