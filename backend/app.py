@@ -3,12 +3,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from . import store
-from .config import STATIC_DIR, Config
-from .llm import build_engine
+from .config import Config
+from .llm import NobodyWhoEngine
 from .routes import attachments, chat, conversations, models
 
 
@@ -18,14 +16,15 @@ def create_app(cfg: Config) -> FastAPI:
         store.init_db(cfg.db_path)
         app.state.cfg = cfg
         app.state.stops = {}
-        app.state.engine = build_engine(cfg)
+        app.state.engine = NobodyWhoEngine(cfg)
         # The model is NOT loaded here: loading is a native call that holds the
         # GIL for ~3s and would freeze the event loop, stalling the initial
-        # conversation/SPA requests. Instead the frontend calls POST /api/warmup
-        # once it has rendered the conversation list, so the load runs on a
-        # background thread after the UI is up (see engine.start_warmup). A first
-        # message before warmup finishes still works (it waits on the same lock).
-        print(f"[app] engine ready: {app.state.engine.backend} (model warms via /api/warmup)")
+        # conversation requests. Instead the desktop app calls POST /api/warmup
+        # once it has loaded the conversation list (and again every few seconds
+        # while nothing is loaded), so the load runs on a background thread after
+        # the UI is up (see engine.start_warmup). A first message before warmup
+        # finishes still works (it waits on the same lock).
+        print("[app] engine ready (model warms via /api/warmup)")
         yield
 
     app = FastAPI(title="LocalChat", lifespan=lifespan)
@@ -39,25 +38,24 @@ def create_app(cfg: Config) -> FastAPI:
         eng = app.state.engine
         return {
             "status": "ok",
-            "backend": eng.backend,
             "model_loaded": eng.model_loaded(),
-            "model_error": getattr(eng, "model_error", None),
-            # Download/switch progress, so a first-run model download started by
-            # the backend itself (packaged builds) can show a % in the UI.
+            "model_error": eng.model_error,
+            # Download/switch progress, so the UI can show a % while a model
+            # downloads or loads.
             "model_task": eng.task_status(),
             "file_uploads": eng.cfg.file_uploads,
         }
 
     @app.post("/api/warmup")
     def warmup():
-        # Kick off the model load in the background (idempotent). The frontend
-        # calls this once the conversation list has rendered, so the GIL-holding
-        # load never stalls the initial UI requests. Returns immediately.
+        # Kick off the model load in the background (idempotent). The desktop app
+        # calls this once the conversation list has loaded, so the GIL-holding
+        # load never stalls the initial UI requests.
         eng = app.state.engine
         eng.start_warmup()
         return {
             "model_loaded": eng.model_loaded(),
-            "model_error": getattr(eng, "model_error", None),
+            "model_error": eng.model_error,
         }
 
     @app.post("/api/shutdown")
@@ -65,27 +63,11 @@ def create_app(cfg: Config) -> FastAPI:
         # Sent by the desktop app when its window closes. Stop any answer being
         # generated (it is saved as "stopped"), let uvicorn finish the in-flight
         # requests, then main() ends the process (see backend/main.py).
-        for conv_id, ev in list(app.state.stops.items()):
-            ev.set()
-            try:
-                app.state.engine.stop(conv_id)
-            except Exception:  # noqa: BLE001
-                pass
+        for conv_id in list(app.state.stops):
+            chat.stop_generation(app, conv_id)
         server = getattr(app.state, "server", None)
         if server is not None:
             server.should_exit = True
         return {"ok": True}
-
-    # Serve the built SPA from the same origin (no CORS). Registered last so the
-    # API routes above take precedence.
-    if STATIC_DIR.exists():
-        app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
-    else:
-        @app.get("/")
-        def no_build():
-            return JSONResponse(
-                {"detail": "Frontend not built. Run `npm run build` in frontend/."},
-                status_code=503,
-            )
 
     return app

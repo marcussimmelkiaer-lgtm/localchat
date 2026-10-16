@@ -3,7 +3,7 @@
 Runs the local HTTP server (FastAPI + uvicorn) and nothing else. The window is
 the Flutter desktop app in desktop/, which starts this process, talks to it over
 http://127.0.0.1:<port>, and asks it to stop (POST /api/shutdown) when the
-window closes. The same UI is also served to a normal browser at that address.
+window closes.
 
 Exiting: the process ends with os._exit() once the server has stopped. A normal
 interpreter exit would run llama.cpp's native teardown (Metal on macOS) while
@@ -23,7 +23,6 @@ import time
 import uvicorn
 
 from .app import create_app
-from .bootstrap import bootstrap
 from .config import load_config
 
 
@@ -74,28 +73,18 @@ def _watch_parent(server: uvicorn.Server, pid: int) -> None:
         time.sleep(2)
 
 
-def _ensure_std_streams():
-    """Give a windowless launch somewhere to write.
-
-    Started without a console (pythonw.exe, or by a GUI app without pipes)
-    sys.stdout/stderr are None, and uvicorn's log formatter crashes on
-    sys.stdout.isatty() at startup. Point both at the log file in the state dir
-    instead (fresh each launch) — also useful when a user reports a problem."""
-    if sys.stdout is not None and sys.stderr is not None:
-        return
-    from .paths import state_dir
-
-    log = open(state_dir() / "LocalChat.log", "w", encoding="utf-8", buffering=1)
-    sys.stdout = sys.stdout or log
-    sys.stderr = sys.stderr or log
+def _announce_when_listening(server: uvicorn.Server, url: str) -> None:
+    """Print the line the desktop app reads to learn the port, but only once
+    uvicorn accepts connections. Printed earlier, the app's first request could
+    be refused (instantly on macOS), leaving the chat list empty."""
+    while not server.started:
+        if server.should_exit:
+            return
+        time.sleep(0.02)
+    print(f"[main] LocalChat backend listening on {url}", flush=True)
 
 
 def main():
-    _ensure_std_streams()
-    # First-launch setup for packaged builds (writable config, adopt a
-    # cached default model). No-op from a source checkout. Must run before load_config
-    # so the config it writes is picked up.
-    bootstrap()
     cfg = load_config()
     port = _pick_port(cfg.host, cfg.port)
     app = create_app(cfg)
@@ -113,8 +102,8 @@ def main():
     if parent and parent.isdigit():
         threading.Thread(target=_watch_parent, args=(server, int(parent)), daemon=True).start()
 
-    # The desktop app reads this line to learn the port.
-    print(f"[main] LocalChat backend listening on http://{cfg.host}:{port}", flush=True)
+    url = f"http://{cfg.host}:{port}"
+    threading.Thread(target=_announce_when_listening, args=(server, url), daemon=True).start()
     try:
         server.run()
     except KeyboardInterrupt:

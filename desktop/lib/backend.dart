@@ -59,8 +59,10 @@ class Backend {
 
     final dataDir = Directory('${root.path}${Platform.pathSeparator}LocalChat data')
       ..createSync(recursive: true);
+    // Appended, so "Try again" or the next launch keeps the output of a failed start.
     final log = File('${dataDir.path}${Platform.pathSeparator}LocalChat.log')
-        .openWrite(mode: FileMode.write);
+        .openWrite(mode: FileMode.append)
+      ..writeln('--- ${DateTime.now()} starting LocalChat ---');
 
     final process = await Process.start(
       python.path,

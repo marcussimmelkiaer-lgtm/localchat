@@ -64,21 +64,26 @@ async def regenerate(req: RegenerateRequest, request: Request):
     # Reset the existing assistant message; llm.prompt_from_store re-derives the
     # last user prompt and prior history, so this re-answers the last user turn.
     store.update_message(
-        req.assistant_message_id, content="", status="streaming", error="", tool_calls=[]
+        req.assistant_message_id, content="", status="streaming", stats={}, error="", tool_calls=[]
     )
     return _sse(request, req.conversation_id, req.assistant_message_id)
 
 
 @router.post("/stop")
 async def stop(req: StopRequest, request: Request):
-    ev = request.app.state.stops.get(req.conversation_id)
+    stop_generation(request.app, req.conversation_id)
+    return {"ok": True}
+
+
+def stop_generation(app, conv_id: str) -> None:
+    """Stop the answer being generated for a conversation (saved as "stopped")."""
+    ev = app.state.stops.get(conv_id)
     if ev:
         ev.set()
     try:
-        request.app.state.engine.stop(req.conversation_id)
+        app.state.engine.stop(conv_id)
     except Exception:  # noqa: BLE001
         pass
-    return {"ok": True}
 
 
 def _sse(request: Request, conv_id: str, assistant_id: str):

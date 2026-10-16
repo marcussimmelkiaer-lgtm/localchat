@@ -185,9 +185,9 @@ def load_table(file_name: str):
     path = DATA_FOLDER / Path(file_name).name  # .name keeps it inside the data folder
     if not path.exists():
         raise FileNotFoundError(f"No file called '{file_name}'. Available files: {spreadsheet_names()}")
-    if path.suffix.lower() == ".csv":
-        return pd.read_csv(path)
-    return pd.read_excel(path)
+    table = pd.read_csv(path) if path.suffix.lower() == ".csv" else pd.read_excel(path)
+    table.columns = [str(name) for name in table.columns]  # Excel headers can be numbers, e.g. 2024
+    return table
 
 
 @tool("List the spreadsheet files (CSV or Excel) that are available for analysis.")
@@ -224,9 +224,11 @@ def calculate(file_name: str, column: str, operation: str, group_by: str = "") -
     operation = operation.strip().lower()
     if operation not in ("sum", "mean", "median", "min", "max", "count"):
         raise ValueError("operation must be one of: sum, mean, median, min, max, count")
-    for name in [column, group_by]:
-        if name and name not in df.columns:
+    for name in [column] + ([group_by] if group_by else []):
+        if name not in df.columns:
             raise ValueError(f"No column '{name}'. The columns are: {', '.join(df.columns)}. Call calculate again with one of these.")
+    if operation != "count" and df[column].dtype.kind not in "iuf":  # i, u, f: whole or decimal numbers
+        raise ValueError(f"Column '{column}' holds text, not numbers, so only count works on it. Use a number column for {operation}.")
 
     if group_by:
         result = df.groupby(group_by)[column].agg(operation).sort_values(ascending=False)
@@ -293,7 +295,11 @@ def update_index() -> None:
         modified = path.stat().st_mtime
         if path in index and index[path][0] == modified:
             continue  # already embedded and unchanged
-        chunks = split_into_chunks(read_document(path))
+        try:
+            text = read_document(path)
+        except Exception:  # a damaged or locked file must not break every search
+            text = ""
+        chunks = split_into_chunks(text)
         index[path] = (modified, list(zip(chunks, encoder.encode_batch(chunks))))
 
 
@@ -316,7 +322,7 @@ def search_documents(question: str) -> str:
     ]
     # A scanned PDF is only pictures of pages: there is no text to search.
     unreadable = [path.name for path, (_, chunks) in index.items() if not chunks]
-    note = f"\n\n(No text could be read from: {', '.join(unreadable)}. Scanned documents need OCR first.)" if unreadable else ""
+    note = f"\n\n(No text could be read from: {', '.join(unreadable)}. Scanned documents need OCR first; damaged or password-protected files can't be read.)" if unreadable else ""
     if not scored:
         return "The rag folder contains no readable documents." + note
     best = sorted(scored, reverse=True)[:TOP_RESULTS]

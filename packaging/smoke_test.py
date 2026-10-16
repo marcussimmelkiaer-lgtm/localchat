@@ -1,20 +1,18 @@
-"""End-to-end smoke test of a packaged LocalChat build (used by CI).
+"""End-to-end smoke test of a running LocalChat (used by CI).
 
-    python packaging/smoke_test.py <path-to-LocalChat-binary> [args...]
-    python packaging/smoke_test.py --running   # app already started (by a launcher)
-    python packaging/smoke_test.py --running --quit   # ...then quit the desktop app
+    python packaging/smoke_test.py          # app already started by a launcher
+    python packaging/smoke_test.py --quit   # ...then quit the desktop app
 
-Launches the frozen app headless (LOCALCHAT_NO_WINDOW=1) on a clean machine and
-checks the whole first-run path a real user hits:
+Checks the whole first-run path a real user hits, after Start LocalChat.* has
+started the desktop app:
 
   1. the server comes up (/healthz),
-  2. warmup triggers the first-run model download (frozen builds ship no model)
-     and the model loads,
-  3. a chat message streams tokens back and finishes with status "done".
+  2. the app loads the model by itself,
+  3. a chat message streams tokens back and finishes with status "done",
+  4. (--quit) quitting the app like a user stops the app and its backend.
 
-The caller picks a tiny model via LOCALCHAT_DEFAULT_MODEL so CI doesn't pull
-2.5 GB, and LOCALCHAT_USE_GPU=0 since runners have no usable GPU. Stdlib only.
-Exits non-zero (printing the app's log) on any failure.
+Run with LOCALCHAT_USE_GPU=0 on CI, since runners have no usable GPU. Stdlib
+only. Exits non-zero on any failure.
 """
 
 from __future__ import annotations
@@ -23,7 +21,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.request
 import uuid
@@ -46,10 +43,8 @@ def _json(method: str, path: str, body: dict | None = None):
         return json.loads(r.read())
 
 
-def _wait_healthz(proc, seconds: int) -> dict:
+def _wait_healthz(seconds: int) -> dict:
     for _ in range(seconds):
-        if proc is not None and proc.poll() is not None:
-            raise RuntimeError(f"app exited early with code {proc.returncode}")
         try:
             return _json("GET", "/healthz")
         except OSError:
@@ -57,16 +52,9 @@ def _wait_healthz(proc, seconds: int) -> dict:
     raise RuntimeError("server never answered /healthz")
 
 
-def _wait_model(seconds: int, kick: bool = True) -> None:
-    """Wait until the model is loaded. kick=False: don't start the load here —
-    the desktop app must load it by itself (a real user never calls warmup)."""
-    if kick:
-        try:
-            _json("POST", "/api/warmup")
-        except OSError as e:
-            # The load it starts can grab the GIL before this response is sent;
-            # the load still runs, so carry on and poll /healthz below.
-            print(f"[smoke] /api/warmup slow to answer ({e}); polling anyway")
+def _wait_model(seconds: int) -> None:
+    """Wait until the model is loaded. The load is NOT started here: the desktop
+    app must load it by itself (a real user never calls warmup)."""
     last = None
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -136,8 +124,7 @@ def _app_running() -> bool:
 
 def _quit_app() -> None:
     """Quit the desktop app the way a user does (close the window / Cmd+Q) and
-    check it and its backend exit cleanly: the old pywebview app hung here on
-    macOS instead of exiting."""
+    check it and its backend exit cleanly (no hang, no crash report)."""
     before = _crash_reports()
     if sys.platform == "win32":
         # Without /f, taskkill sends WM_CLOSE: the same as clicking the X.
@@ -162,56 +149,18 @@ def _quit_app() -> None:
     print("[smoke] app and backend exited cleanly")
 
 
-def _check_running(quit_after: bool) -> int:
-    """Check an app that something else started (e.g. Start LocalChat.*)."""
+def main() -> int:
     try:
-        print(f"[smoke] server up: {_wait_healthz(None, 600)}")
-        _wait_model(300, kick=False)
+        print(f"[smoke] server up: {_wait_healthz(600)}")
+        _wait_model(300)
         _chat()
-        if quit_after:
+        if "--quit" in sys.argv[1:]:
             _quit_app()
         print("[smoke] PASS")
         return 0
     except Exception as e:  # noqa: BLE001
         print(f"[smoke] FAIL: {e}")
         return 1
-
-
-def main() -> int:
-    if sys.argv[1:2] == ["--running"]:
-        return _check_running("--quit" in sys.argv[2:])
-    os.environ["LOCALCHAT_NO_WINDOW"] = "1"
-    os.environ["PYTHONUNBUFFERED"] = "1"  # so the app's output survives a kill
-    log_path = Path(tempfile.gettempdir()) / "smoke_app.log"
-    log = open(log_path, "w", encoding="utf-8")
-    cmd = [str(Path(sys.argv[1]).resolve()), *sys.argv[2:]]
-    proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
-    try:
-        h = _wait_healthz(proc, 120)
-        print(f"[smoke] server up: {h}")
-        _wait_model(900)
-        _chat()
-        print("[smoke] PASS")
-        return 0
-    except Exception as e:  # noqa: BLE001
-        print(f"[smoke] FAIL: {e}")
-        log.flush()
-        print("----- app output -----")
-        print(log_path.read_text(encoding="utf-8", errors="replace")[-8000:])
-        # A windowed build has no stdout; it logs to the per-user data dir.
-        for d in (Path(os.environ.get("LOCALAPPDATA", "")) / "LocalChat",
-                  Path.home() / "Library" / "Application Support" / "LocalChat"):
-            app_log = d / "LocalChat.log"
-            if app_log.is_file():
-                print(f"----- {app_log} -----")
-                print(app_log.read_text(encoding="utf-8", errors="replace")[-8000:])
-        return 1
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            proc.kill()
 
 
 if __name__ == "__main__":

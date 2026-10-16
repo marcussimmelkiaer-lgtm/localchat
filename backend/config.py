@@ -5,16 +5,12 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .paths import bundle_dir, data_dir, state_dir
+from .paths import REPO_ROOT, state_dir
 
-# Writable per-user dir (repo root in a source checkout; app-data when frozen).
-# config.toml lives here.
-ROOT = data_dir()
-# The app's own files (chat DB, uploads, log): ROOT/"LocalChat data" in a
-# checkout, the same per-user dir when frozen.
+# The LocalChat folder; config.toml lives here.
+ROOT = REPO_ROOT
+# The app's own files (chat DB, uploads, log): ROOT/"LocalChat data".
 STATE_DIR = state_dir()
-# Read-only shipped assets (repo root in a checkout; the bundle when frozen).
-STATIC_DIR = bundle_dir() / "backend" / "static"
 
 
 @dataclass
@@ -29,7 +25,7 @@ class Config:
     system_prompt: str | None = None
     n_ctx: int = 16384
     use_gpu: bool = True
-    # For reasoning models (e.g. Qwen3): keep <think> blocks out of the chat.
+    # For reasoning models (e.g. Qwen3): let the model think before answering.
     allow_thinking: bool = False
     # Paperclip upload button (files folded into the prompt, images via vision).
     file_uploads: bool = True
@@ -38,6 +34,9 @@ class Config:
     # [tools] switches from config.toml, e.g. {"weather": True}. See backend/tools.py.
     tools: dict = field(default_factory=dict)
     db_path: str = str((STATE_DIR / "localchat.db").resolve())
+    # Set when config.toml can't be read; shown in the app instead of a vague
+    # "no model" message.
+    config_error: str | None = None
 
 
 def _as_bool(v, default: bool) -> bool:
@@ -48,27 +47,39 @@ def _as_bool(v, default: bool) -> bool:
     return default
 
 
+def _as_int(v, default: int) -> int:
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        print(f"[config] ignoring {v!r}: not a whole number")
+        return default
+
+
 def load_config() -> Config:
     cfg = Config()
     toml_path = ROOT / "config.toml"
     data: dict = {}
     if toml_path.exists():
         try:
-            with open(toml_path, "rb") as f:
-                data = tomllib.load(f)
+            # utf-8-sig: Notepad / PowerShell may save the file with a BOM.
+            data = tomllib.loads(toml_path.read_text(encoding="utf-8-sig"))
         except Exception as e:  # noqa: BLE001 - never let a bad config crash startup
             print(f"[config] failed to parse config.toml: {e}")
+            cfg.config_error = (
+                f"config.toml has an error: {e}. Fix it (inside a \"...\" text use ' "
+                "instead of \") and restart LocalChat."
+            )
 
     cfg.model_path = data.get("model_path") or None
     cfg.projection_model_path = data.get("projection_model_path") or None
     cfg.host = data.get("host", cfg.host)
-    cfg.port = int(data.get("port", cfg.port))
+    cfg.port = _as_int(data.get("port", cfg.port), cfg.port)
     cfg.system_prompt = data.get("system_prompt") or None
-    cfg.n_ctx = int(data.get("n_ctx", cfg.n_ctx))
+    cfg.n_ctx = _as_int(data.get("n_ctx", cfg.n_ctx), cfg.n_ctx)
     cfg.use_gpu = _as_bool(data.get("use_gpu", cfg.use_gpu), True)
     cfg.allow_thinking = _as_bool(data.get("allow_thinking", cfg.allow_thinking), False)
     cfg.file_uploads = _as_bool(data.get("file_uploads", cfg.file_uploads), True)
-    cfg.max_live_chats = max(1, int(data.get("max_live_chats", cfg.max_live_chats)))
+    cfg.max_live_chats = max(1, _as_int(data.get("max_live_chats", cfg.max_live_chats), cfg.max_live_chats))
     if data.get("db_path"):
         cfg.db_path = data["db_path"]
     if isinstance(data.get("sampler"), dict):

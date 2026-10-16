@@ -13,6 +13,10 @@ REM system-wide and no admin rights are needed; deleting the folder removes
 REM LocalChat (downloaded models stay in %LOCALAPPDATA%\nobodywho for reuse).
 REM Later runs skip straight to starting the app.
 
+REM --- Already running? Updating files under a running app breaks it.
+tasklist /fi "imagename eq LocalChat.exe" 2>nul | find /i "LocalChat.exe" >nul
+if not errorlevel 1 goto :running
+
 set "UV_DIR=%~dp0.uv"
 set "UV=%UV_DIR%\uv.exe"
 set "UV_PYTHON_INSTALL_DIR=%UV_DIR%\python"
@@ -53,7 +57,7 @@ if not exist "config.toml" copy /y backend\config.example.toml config.toml >nul
 REM --- Git: hide the files created above from `git status` (local to this
 REM     clone, so the repo needs no .gitignore). Added once.
 if not exist ".git\info" goto :model
-findstr /c:"app/LocalChat/" ".git\info\exclude" >nul 2>&1
+findstr /c:"!rag/employee_handbook.md" ".git\info\exclude" >nul 2>&1
 if not errorlevel 1 goto :model
 >>".git\info\exclude" (
   echo # Added by the LocalChat launcher: files created on first run.
@@ -63,7 +67,10 @@ if not errorlevel 1 goto :model
   echo LocalChat data/
   echo app/LocalChat/
   echo *.gguf
+  echo *.bak
   echo __pycache__/
+  echo rag/*
+  echo !rag/employee_handbook.md
 )
 
 :model
@@ -79,7 +86,10 @@ if not errorlevel 1 goto :launch
 echo Unpacking the LocalChat app...
 if exist "app\LocalChat" rmdir /s /q "app\LocalChat"
 tar -xf app\LocalChat.zip -C app
-if errorlevel 1 goto :fail
+if not errorlevel 1 goto :launch
+REM A half-unpacked app must not look up to date next time.
+del /q "app\LocalChat\version.txt" >nul 2>&1
+goto :fail
 
 REM --- Launch: the app starts the Python backend itself and stops it when its
 REM     window closes. Backend output goes to "LocalChat data\LocalChat.log".
@@ -90,6 +100,12 @@ if not exist "%APP%" set "APP=desktop\build\windows\x64\runner\Release\LocalChat
 if not exist "%APP%" goto :noapp
 start "" "%APP%"
 exit /b 0
+
+:running
+echo LocalChat is already running. Close it first, then double-click
+echo "Start LocalChat.bat" again.
+if not defined CI pause
+exit /b 1
 
 :noapp
 echo.

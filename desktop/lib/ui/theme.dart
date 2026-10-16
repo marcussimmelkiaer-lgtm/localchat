@@ -1,4 +1,4 @@
-// Monochrome, white-dominant palette (same tokens as frontend/tailwind.config.js).
+// Monochrome, white-dominant palette.
 
 import 'dart:async';
 import 'dart:io';

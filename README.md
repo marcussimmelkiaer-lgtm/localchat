@@ -10,7 +10,7 @@ Everything runs locally — no cloud, no API keys.
 
 ## Requirements
 
-- macOS 11+ on Apple Silicon (M1 or newer), or Windows 10/11 x64.
+- macOS 12+ on Apple Silicon (M1 or newer), or Windows 10/11 x64.
 - Git, to clone.
 - Nothing else. The launcher downloads a private Python 3.12 (via
   [uv](https://docs.astral.sh/uv/)) into the folder; no admin rights needed.
@@ -46,13 +46,16 @@ Workshop participants clone a slim, single-OS repo (one launcher + `backend/`)
 generated from this one, so the two never drift:
 
 ```
-python packaging/export_workshop.py windows ../localchat-windows --repo-url <clone-url>
-python packaging/export_workshop.py mac     ../localchat-mac     --repo-url <clone-url>
+python packaging/export_workshop.py windows <tmp>/win --repo-url <clone-url> --app-dir <dir>
+python packaging/export_workshop.py mac     <tmp>/mac --repo-url <clone-url> --app-dir <dir>
 ```
 
-Then commit + push in each target. `.github/workflows/workshop-first-run.yml`
-runs the exported launchers on clean macOS + Windows runners (real model
-download, CPU generation).
+`--app-dir` holds the desktop app built by CI (the `LocalChat-windows` /
+`LocalChat-macos` artifact of `.github/workflows/desktop-app.yml`). The export
+deletes everything in its target except `.git`, so export to a temporary folder
+and copy the files into each slim-repo clone, then commit + push there.
+`.github/workflows/workshop-first-run.yml` runs the exported launchers on clean
+macOS + Windows runners (real model download, CPU generation).
 
 ## Configuration (`config.toml`)
 
@@ -65,34 +68,28 @@ experimenting with; the others below can be added by hand and default sensibly.
 | `port` | Local server port (falls back to a free one if busy) |
 | `n_ctx` | Context window size |
 | `use_gpu` | Use the GPU (Metal on macOS / Vulkan on Windows) if available; `false` forces CPU |
-| `allow_thinking` | For reasoning models (Qwen3): keep `<think>` blocks out of chat |
+| `allow_thinking` | For reasoning models (Qwen3): think before answering (shown in a collapsible box) |
+| `file_uploads` | Show the paperclip for attaching files and images |
 | `system_prompt` | System prompt |
 | `[sampler]` | `preset` = temperature \| top_k \| top_p \| greedy \| default |
+| `[tools]` | Optional model tools: `time`, `weather`, `wikipedia`, `pandas`, `rag` (see `backend/tools.py`) |
 
 ## Architecture
 
-- **Frontend** — React + Tailwind (Vite), prebuilt into `backend/static/`.
-- **Backend** — FastAPI serving the SPA + a streaming chat endpoint (SSE).
-  Generation runs in a worker thread; tokens stream to the UI over Server-Sent
-  Events. Conversations persist in a local SQLite file.
+- **Backend** — FastAPI with a streaming chat endpoint (SSE). Generation runs in
+  a worker thread; tokens stream to the app over Server-Sent Events.
+  Conversations persist in a local SQLite file.
 - **Desktop app** — Flutter (`desktop/`, see its README). It starts the Python
   backend, shows the chat, and stops the backend when the window closes. CI
   builds it per OS; the workshop repos ship it as `app/LocalChat.zip`, which
-  the launcher unpacks on first run. The browser UI below is the same app in a
-  web page (open the backend's address in a browser).
+  the launcher unpacks on first run.
 
 ## Develop
 
-```
-cd frontend
-npm install
-npm run dev        # Vite dev server with API proxy to the backend
-npm run build      # rebuild backend/static (commit the result)
-```
-
-Run the backend on its own (it prints its address; open it in a browser for
-the web UI, or point the desktop app at this folder):
+Run the backend on its own (it prints its address):
 
 ```
 venv/bin/python -m backend.main   # Windows: venv\Scripts\python
 ```
+
+See `desktop/README.md` for building and running the desktop app.

@@ -1,14 +1,14 @@
 """Export a slim, single-OS copy of LocalChat for the workshop repos.
 
-This repo holds everything (frontend source, packaging, CI). Workshop
+This repo holds everything (desktop app source, packaging, CI). Workshop
 participants instead clone a slim repo with just the runtime: one launcher,
-backend/ (incl. the prebuilt SPA, requirements and the config template) and
+the prebuilt desktop app, backend/ (incl. requirements and the config template) and
 the example data/ + rag/ folders. No .gitignore / .gitattributes: the launcher
 adds its own ignore rules to .git/info/exclude, and line endings are committed
 as-is (CRLF .bat, LF .command), so the root shows only what learners need. Both slim repos come from here, so they never drift apart.
 
-    python packaging/export_workshop.py windows ../localchat-windows --repo-url https://github.com/<owner>/localchat-windows.git --app-dir <dir>
-    python packaging/export_workshop.py mac     ../localchat-mac     --repo-url https://github.com/<owner>/localchat-mac.git --app-dir <dir>
+    python packaging/export_workshop.py windows <tmp>/win --repo-url https://github.com/<owner>/localchat-windows.git --app-dir <dir>
+    python packaging/export_workshop.py mac     <tmp>/mac --repo-url https://github.com/<owner>/localchat-mac.git --app-dir <dir>
 
 --app-dir is a folder holding the desktop app built by CI (the
 "LocalChat-windows" / "LocalChat-macos" artifact of .github/workflows/desktop-app.yml:
@@ -18,8 +18,10 @@ app/version.txt; the launcher unpacks it on first run.
 --repo-url fills the `git clone` line in the README; re-export with the new URL
 when the repos move.
 
-The target is synced to match the export exactly (everything except .git is
-replaced). If the target is a git repo, the result is staged (with the macOS
+The target is synced to match the export exactly: EVERYTHING except .git is
+deleted first, including a venv/, config.toml or "LocalChat data/" (chats).
+So export to a temporary folder, not into a clone you run LocalChat from, and
+copy the files over (see CLAUDE.md decision #16). If the target is a git repo, the result is staged (with the macOS
 launcher marked executable) but NOT committed: review, commit and push by hand.
 Stdlib only.
 """
@@ -70,6 +72,13 @@ def export(target_os: str, out: Path, repo_url: str, app_dir: Path) -> None:
     missing = [str(src) for src in files.values() if not src.is_file()]
     if missing:
         sys.exit("missing source files:\n  " + "\n  ".join(missing))
+
+    # The sync below deletes everything but .git: never run it on a folder
+    # someone uses LocalChat from (venv, settings, chats).
+    in_use = [n for n in ("venv", ".uv", "config.toml", "LocalChat data") if (out / n).exists()]
+    if in_use:
+        sys.exit(f"{out} is a LocalChat folder in use ({', '.join(in_use)}): export to an "
+                 "empty folder and copy the files over instead.")
 
     out.mkdir(parents=True, exist_ok=True)
     for child in out.iterdir():

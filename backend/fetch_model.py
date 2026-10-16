@@ -21,13 +21,11 @@ import sys
 import time
 from pathlib import Path
 
-from .paths import bundle_dir, data_dir
+from .paths import REPO_ROOT
 
-# config.toml is WRITABLE, so it lives in the per-user data dir (repo root in a
-# source checkout). The example template it's seeded from is a shipped asset, so
-# it comes from the read-only bundle.
-CONFIG_PATH = data_dir() / "config.toml"
-_EXAMPLE_PATH = bundle_dir() / "backend" / "config.example.toml"
+# config.toml sits next to the launcher; it is seeded from the template.
+CONFIG_PATH = REPO_ROOT / "config.toml"
+_EXAMPLE_PATH = REPO_ROOT / "backend" / "config.example.toml"
 
 # Default model for a fresh machine: the smallest Qwen3 (~640 MB), so a first
 # launch on shared Wi-Fi is quick. Bigger Qwen3s are one click away in the Models
@@ -47,14 +45,9 @@ def _current_model_path() -> str | None:
     """Read model_path out of config.toml without importing the full app."""
     if not CONFIG_PATH.exists():
         return None
-    try:
-        import tomllib
+    import tomllib
 
-        with open(CONFIG_PATH, "rb") as f:
-            data = tomllib.load(f)
-    except Exception as e:  # noqa: BLE001
-        print(f"[fetch_model] could not parse config.toml: {e}")
-        return None
+    data = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))  # raises on a broken file
     val = data.get("model_path") or None
     return str(Path(val).expanduser()) if val else None
 
@@ -68,7 +61,7 @@ def _write_model_path(path: str) -> None:
     if not CONFIG_PATH.exists():
         CONFIG_PATH.write_text(_EXAMPLE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
 
-    text = CONFIG_PATH.read_text(encoding="utf-8")
+    text = CONFIG_PATH.read_text(encoding="utf-8-sig")  # drops a BOM, if any
     # TOML on Windows: forward slashes are safest (backslashes are escapes in
     # basic strings). Path() normalises; we emit with forward slashes.
     value = str(Path(path)).replace("\\", "/")
@@ -119,7 +112,7 @@ def _sideloaded_model() -> str | None:
     Lets a workshop hand out the model on a USB stick: copy the folder plus the
     .gguf and no download happens. Picks the largest file, so a stray mmproj
     projector (always much smaller) is never chosen as the chat model."""
-    files = [p for p in data_dir().glob("*.gguf") if p.is_file()]
+    files = [p for p in REPO_ROOT.glob("*.gguf") if p.is_file()]
     if not files:
         return None
     return str(max(files, key=lambda p: p.stat().st_size).resolve())
@@ -129,7 +122,12 @@ def ensure_model() -> int:
     """Returns 0 if a usable model is configured (downloading one if needed),
     non-zero on failure. The launcher still starts the app on failure — the UI
     surfaces the model error and the user can set model_path by hand."""
-    existing = _current_model_path()
+    try:
+        existing = _current_model_path()
+    except Exception as e:  # noqa: BLE001
+        # Don't download (or rewrite the file) on top of a typo; the app shows the error.
+        print(f"[fetch_model] config.toml has an error, fix it first: {e}")
+        return 1
     if existing and Path(existing).is_file():
         print(f"[fetch_model] model already present: {existing}")
         return 0

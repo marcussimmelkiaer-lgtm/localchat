@@ -72,7 +72,7 @@ class RenameConversation(BaseModel):
 class ChatStreamRequest(BaseModel):
     conversation_id: str
     content: str
-    # Client-supplied ids so the frontend's optimistic messages and the
+    # Client-supplied ids so the app's optimistic messages and the
     # persisted rows share the same id (no reconciliation on reload).
     user_message_id: str
     assistant_message_id: str

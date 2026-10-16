@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from pathlib import PurePath
 
@@ -205,6 +206,19 @@ def build_catalog(active_path: str | None) -> dict:
         c["active"] = bool(active_norm and _norm(c["path"]) == active_norm)
         c["in_catalog"] = any(_norm(c["path"]).endswith(_spec_tail(i["spec"])) for i in CATALOG)
 
+    # Not chat models, so never offered as "Use": a vision model's projector
+    # (mmproj, part of its catalog row) and the RAG tool's embedding model.
+    try:
+        from .tools import EMBEDDING_MODEL
+
+        embedder = _spec_tail(EMBEDDING_MODEL)
+    except Exception:  # noqa: BLE001 - a broken tools.py just means nothing to hide
+        embedder = None
+    cached = [
+        c for c in cached
+        if not c["name"].lower().startswith("mmproj")
+        and not (embedder and _norm(c["path"]).endswith(embedder))
+    ]
     return {"catalog": catalog, "cached": cached}
 
 
@@ -234,15 +248,18 @@ _PREFERRED_QUANTS = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0", "Q6_K", "Q5_K_S", "Q8
 def _hf_gguf_files(repo: str) -> list[str]:
     """`.gguf` filenames in a Hugging Face repo via its public API.
 
-    Returns [] on 404/network error (best-effort — the caller tries the next
-    candidate repo, then raises a helpful message if all come up empty)."""
+    Returns [] when the repo doesn't exist or can't be read (the caller tries the
+    next candidate repo, then raises a helpful message if all come up empty).
+    Raises ValueError when Hugging Face can't be reached at all."""
     url = f"https://huggingface.co/api/models/{repo}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "localchat"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-    except Exception:  # noqa: BLE001 - any failure just means "no files here"
+    except urllib.error.HTTPError:  # 404, gated or private repo
         return []
+    except OSError as e:
+        raise ValueError(f"Couldn't reach Hugging Face ({e}). Check the internet connection.") from e
     files = []
     for sib in data.get("siblings") or []:
         name = sib.get("rfilename") if isinstance(sib, dict) else None
@@ -302,15 +319,14 @@ def resolve_spec(user_input: str) -> str:
         return s
 
     if s.lower().startswith(("http://", "https://")):
-        low = s.lower()
-        if "huggingface.co/" in low:
-            after = s.split("huggingface.co/", 1)[1]
-            # Strip /resolve/<rev>/, /blob/<rev>/, /tree/<rev>/ markers so a link
+        hf = re.match(r"https?://(?:www\.)?(?:huggingface|hf)\.co/(.+)", s, re.IGNORECASE)
+        if hf:
+            # Strip /resolve/<rev>, /blob/<rev>, /tree/<rev> markers so a link
             # copied from the file browser collapses to owner/repo[/file].
-            after = re.sub(r"/(resolve|blob|tree)/[^/]+/", "/", after)
-            s = after.split("?", 1)[0].rstrip("/")
+            after = re.sub(r"/(resolve|blob|tree)/[^/]+(?=/|$)", "", hf.group(1).split("?", 1)[0])
+            s = after.rstrip("/")
             # fall through to the huggingface-path handling below
-        elif low.endswith(".gguf"):
+        elif s.lower().endswith(".gguf"):
             return s  # arbitrary direct GGUF URL — nobodywho fetches it directly
         else:
             raise ValueError("Give a Hugging Face repo (owner/name) or a direct .gguf URL.")

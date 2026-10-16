@@ -1,5 +1,7 @@
 venv/
+.uv/
 config.toml
+*.bak
 *.db
 *.db-wal
 *.db-shm
@@ -7,25 +9,11 @@ __pycache__/
 *.pyc
 *.gguf
 uploads/
-frontend/node_modules/
-frontend/dist/
 
-# backend/static is the COMMITTED prebuilt SPA — do not ignore it.
-
-# Packaging build outputs (see packaging/README.md).
-build/
-dist/
-*.spec.log
-build_pyi.log
-frozen_run.log
-packaging/windows/models/
-packaging/windows/MicrosoftEdgeWebview2Setup.exe
-# (*.gguf is already ignored above, covering staged models too.)
-
-# Runtime log of windowless launches (backend/main.py _ensure_std_streams).
+# Runtime log and the app's own files (backend/paths.py state_dir).
 LocalChat.log
-# The app's own files in a source checkout (backend/paths.py state_dir).
 LocalChat data/
 
-# macOS window probe output (packaging/mac_gui_probe.py).
-probe-out/
+# Your own documents dropped into rag/ for testing; only the example is tracked.
+rag/*
+!rag/employee_handbook.md

@@ -7,7 +7,7 @@ name: Workshop first run
 # backend), check the model loads and answers a chat message, then quit the app
 # like a user and check the app and backend exit cleanly.
 #
-# Unlike the old run.sh smoke test, this downloads the REAL default model
+# This downloads the REAL default model
 # (Qwen3-0.6B, ~640 MB). Runners have no usable GPU, so it runs on CPU.
 
 on:
@@ -84,7 +84,7 @@ jobs:
       - name: App loads the model, chats, and quits cleanly
         if: matrix.target == 'mac'
         shell: bash
-        run: python packaging/smoke_test.py --running --quit
+        run: python packaging/smoke_test.py --quit
 
       # One step on Windows: the runner kills processes a step leaves behind
       # when it ends, which would take the detached app down before the check.
@@ -98,7 +98,7 @@ jobs:
           set rc=%errorlevel%
           type launcher.log
           if not "%rc%"=="0" exit /b %rc%
-          python "%GITHUB_WORKSPACE%\packaging\smoke_test.py" --running --quit
+          python "%GITHUB_WORKSPACE%\packaging\smoke_test.py" --quit
 
       - name: Dump logs on failure
         if: failure()

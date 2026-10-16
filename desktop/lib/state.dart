@@ -1,7 +1,6 @@
 // App state: conversations + messages, the answer being streamed, backend
 // health (model loading / download progress) and the model manager. One
-// ChangeNotifier the widgets listen to; the Dart counterpart of the browser
-// UI's hooks (frontend/src/hooks/).
+// ChangeNotifier the widgets listen to.
 
 import 'dart:async';
 import 'dart:convert';
@@ -70,7 +69,6 @@ class AppState extends ChangeNotifier {
   String? activeId;
   final Map<String, List<Message>> _messages = {};
   bool ready = false;
-  String? loadError;
 
   List<Message> get activeMessages => activeId == null ? const [] : (_messages[activeId] ?? const []);
 
@@ -109,8 +107,8 @@ class AppState extends ChangeNotifier {
       _sortConversations();
       activeId = conversations.isEmpty ? null : conversations.first.id;
       if (activeId != null) await _hydrate(activeId!);
-    } catch (e) {
-      loadError = '$e';
+    } catch (_) {
+      // Backend not answering: start with an empty sidebar.
     }
     ready = true;
     notifyListeners();
@@ -123,9 +121,15 @@ class AppState extends ChangeNotifier {
 
   DateTime _lastWarmup = DateTime.fromMillisecondsSinceEpoch(0);
   int _healthFailures = 0;
+  // Each (re)start of a poll loop bumps its counter; a tick from an older loop
+  // that was mid-request then stops instead of running alongside the new one.
+  int _healthLoop = 0;
+  int _taskLoop = 0;
+  bool _disposed = false;
 
   @override
   void dispose() {
+    _disposed = true;
     _healthTimer?.cancel();
     _taskTimer?.cancel();
     _flushTimer?.cancel();
@@ -135,8 +139,10 @@ class AppState extends ChangeNotifier {
 
   void _pollHealth() {
     _healthTimer?.cancel();
+    final loop = ++_healthLoop;
     Future<void> tick() async {
       var h = await api.health();
+      if (loop != _healthLoop || _disposed) return;
       // One failed check is not "server down" (a connection hiccup); only
       // report it after 3 in a row, ~2 s. Meanwhile keep the last known state.
       if (!h.available) {
@@ -177,7 +183,7 @@ class AppState extends ChangeNotifier {
     try {
       _messages[id] = await api.messages(id);
     } catch (_) {
-      _messages[id] = [];
+      // Not cached, so selecting the chat again retries.
     }
   }
 
@@ -207,6 +213,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> delete(String id) async {
+    if (id == _streamConv) _finish(id, _streamMsg!, null); // the backend stops it on delete
     conversations.removeWhere((c) => c.id == id);
     _messages.remove(id);
     if (activeId == id) {
@@ -299,8 +306,16 @@ class AppState extends ChangeNotifier {
 
   void stop() {
     final convId = _streamConv;
-    if (convId == null) return;
+    final msgId = _streamMsg;
+    if (convId == null || msgId == null) return;
     unawaited(api.stop(convId).catchError((_) {}));
+    // The backend confirms with `done`; if that never comes, end it here so the
+    // app doesn't stay stuck in "streaming".
+    Timer(const Duration(seconds: 5), () {
+      if (_streamMsg != msgId) return;
+      _find(convId, msgId)?.status = 'stopped';
+      _finish(convId, msgId, null);
+    });
   }
 
   void _run(String convId, String msgId, Stream<ChatEvent> events) {
@@ -434,11 +449,17 @@ class AppState extends ChangeNotifier {
 
   void _pollTask() {
     _taskTimer?.cancel();
+    final loop = ++_taskLoop;
     Future<void> tick() async {
+      ModelTask? t;
       try {
-        task = await api.modelStatus();
-        notifyListeners();
+        t = await api.modelStatus();
       } catch (_) {}
+      if (loop != _taskLoop || _disposed) return;
+      if (t != null) {
+        task = t;
+        notifyListeners();
+      }
       if (task.busy) {
         _taskTimer = Timer(const Duration(milliseconds: 600), tick);
       } else {

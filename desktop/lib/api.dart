@@ -1,6 +1,6 @@
 // HTTP client for the local Python backend (backend/app.py + backend/routes/).
-// Same endpoints the browser UI uses. Answers stream as server-sent events
-// (SSE) over a POST, parsed by [Api.streamChat].
+// Answers stream as server-sent events (SSE) over a POST, parsed by
+// [Api.streamChat].
 
 import 'dart:async';
 import 'dart:convert';
@@ -110,8 +110,6 @@ class Api {
       // The health poll surfaces any error.
     }
   }
-
-  Future<void> shutdown() => _send('POST', '/api/shutdown', null, const Duration(seconds: 3));
 
   // ---- conversations ----
 

@@ -46,8 +46,9 @@ def prompt_from_store(conv_id: str):
     source of truth.
 
     The prompt is the last user message; the prefix is every completed message
-    before it. The trailing empty assistant placeholder is naturally excluded
-    (empty content), so this is identical for a fresh send and a regenerate.
+    before it. The trailing empty assistant placeholder comes after the last
+    user message, so it is excluded and this is identical for a fresh send and
+    a regenerate.
 
     Each user message's attachment text is folded in front of its typed content
     (fold_content) so the model sees uploaded file contents on every turn.
@@ -78,12 +79,10 @@ def prompt_from_store(conv_id: str):
 
 
 class NobodyWhoEngine:
-    """Real local generation via the NobodyWho bindings (llama.cpp + Vulkan).
+    """Real local generation via the NobodyWho bindings (llama.cpp; Vulkan on Windows, Metal on macOS).
 
     A single reference-counted Model holds the weights (loaded once, on the GPU
     when available); each conversation gets its own Chat sharing those weights."""
-
-    backend = "nobodywho"
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
@@ -101,7 +100,7 @@ class NobodyWhoEngine:
         self._default_model_path = cfg.model_path
         self._default_projection = cfg.projection_model_path
         # State of the current long-running model op (download or switch), polled
-        # by the frontend via GET /api/models/status. status:
+        # by the desktop app via GET /api/models/status. status:
         #   idle | downloading | loading | ready | error
         self._task = {
             "action": None,
@@ -232,6 +231,8 @@ class NobodyWhoEngine:
             return
         self._set_task(fraction=1.0)
         if then_switch:
+            while self._active:  # never swap the model under an answer being generated
+                time.sleep(0.5)
             self._do_switch(str(local_path))
         else:
             self._set_task(status="ready", target=str(local_path))
@@ -280,19 +281,13 @@ class NobodyWhoEngine:
             print(f"[llm] could not persist model_path: {e}")
         self._set_task(status="ready", error=None)
 
-    def warmup(self) -> None:
-        """Load the model. Raises on failure (caller records model_error)."""
-        self._ensure_model()
-
     def start_warmup(self) -> None:
         """Kick off a one-shot background model load (idempotent, non-blocking).
 
         The load is a native call that holds the GIL for ~3s, so it MUST run off
         the event loop. It runs on a daemon thread here; a concurrent first
-        message blocks on the same _model_lock (no double load). The UI (a
-        separate WebView2 process) stays responsive while this runs."""
-        if self._start_first_run_download():
-            return
+        message blocks on the same _model_lock (no double load). The UI (the
+        separate Flutter app) stays responsive while this runs."""
         with self._model_lock:
             if self._loaded.is_set() or self._warming:
                 return
@@ -309,25 +304,6 @@ class NobodyWhoEngine:
 
         threading.Thread(target=_run, daemon=True).start()
 
-    def _start_first_run_download(self) -> bool:
-        """Packaged builds ship without weights (slim single-file installers), so
-        on a fresh install there is no model yet. Fetch the default in the
-        background — same download→switch task the model picker uses, so it
-        persists model_path and /healthz reports progress. Returns True if a
-        download is (now) running, in which case the caller must not try to load.
-
-        Source checkouts are untouched: the launcher already ran fetch_model,
-        and a hand-set bad path should surface as an error, not a surprise fetch."""
-        from . import paths
-
-        if not paths.is_frozen() or self.current_model()["exists"]:
-            return False
-        if self.task_status()["status"] == "downloading":
-            return True
-        from . import fetch_model
-
-        return self.start_download(fetch_model.default_spec(), then_switch=True)["ok"]
-
     def _ensure_model(self):
         if self._model is not None:
             return self._model
@@ -335,7 +311,8 @@ class NobodyWhoEngine:
             if self._model is None:
                 if not self.cfg.model_path:
                     raise RuntimeError(
-                        "No model configured. Set model_path in config.toml to a local .gguf file."
+                        self.cfg.config_error
+                        or "No model configured. Set model_path in config.toml to a local .gguf file."
                     )
                 if not os.path.isfile(self.cfg.model_path):
                     raise RuntimeError(f"Model file not found: {self.cfg.model_path}")
@@ -381,7 +358,7 @@ class NobodyWhoEngine:
         kwargs = {
             "n_ctx": self.cfg.n_ctx,
             # Reasoning models (Qwen3) read enable_thinking from their template;
-            # off by default keeps <think> blocks out of the chat.
+            # off by default: the model answers without thinking first.
             "template_variables": {"enable_thinking": self.cfg.allow_thinking},
         }
         if self.cfg.system_prompt:
@@ -452,7 +429,7 @@ class NobodyWhoEngine:
             self._ensure_model()
             self._set_task(status="ready", error=None)
         except Exception as e:  # noqa: BLE001
-            self.model_error = str(e)
+            self._start_restore_default()  # back to the text model, so chat keeps working
             return f"Failed to load the vision model: {e}"
         return None
 
@@ -517,11 +494,12 @@ class NobodyWhoEngine:
 
         try:
             try:
-                # Lazily loads the model on first use (blocks this worker thread,
-                # not the event loop's request handling beyond this generation).
+                # Lazily loads the model on first use. The load holds the GIL,
+                # so it briefly stalls the event loop too (see start_warmup).
                 sess = self._sessions.get(conv_id)
             except Exception as e:  # noqa: BLE001
-                self.model_error = str(e)
+                if not self._loaded.is_set():  # no model at all: show it app-wide
+                    self.model_error = str(e)
                 yield ("error", str(e))
                 return
             with sess.lock:
@@ -572,7 +550,3 @@ def _stats(t0: float, first: float | None, count: int) -> dict:
         "tokens_per_second": count / seconds,
         "ttft_ms": (base - t0) * 1000.0,
     }
-
-
-def build_engine(cfg: Config) -> NobodyWhoEngine:
-    return NobodyWhoEngine(cfg)

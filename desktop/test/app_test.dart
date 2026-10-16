@@ -18,10 +18,16 @@ import 'package:localchat/ui/theme.dart';
 String sse(String event, Object data) => 'event: $event\r\ndata: ${jsonEncode(data)}\r\n\r\n';
 
 class FakeBackend {
-  FakeBackend({this.existing = false});
+  FakeBackend({this.existing = false, this.messageFailures = 0, this.hang = false});
 
   /// Start with one saved conversation (the app opens straight into it).
   final bool existing;
+
+  /// Loading the saved conversation fails this many times first.
+  int messageFailures;
+
+  /// The answer never finishes, not even after a stop.
+  final bool hang;
   final List<Map<String, dynamic>> streamed = [];
   final List<String> renamed = [];
 
@@ -52,6 +58,10 @@ class FakeBackend {
               ]
             : []);
       case ('GET', '/api/conversations/c0'):
+        if (messageFailures > 0) {
+          messageFailures--;
+          return json({'detail': 'busy'}, 500);
+        }
         return json({
           'id': 'c0',
           'title': 'hello',
@@ -74,6 +84,8 @@ class FakeBackend {
       case ('PATCH', '/api/conversations/c1'):
         renamed.add((jsonDecode(text) as Map)['title'] as String);
         return json({'ok': true});
+      case ('POST', '/api/chat/stop'):
+        return json({'ok': true});
       case ('GET', '/api/models'):
         return json({
           'active': {'name': 'Qwen3-0.6B-Q8_0.gguf', 'path': '/m/Qwen3-0.6B-Q8_0.gguf'},
@@ -82,6 +94,10 @@ class FakeBackend {
         });
       case ('POST', '/api/chat/stream'):
         streamed.add((jsonDecode(text) as Map).cast<String, dynamic>());
+        if (hang) {
+          return http.StreamedResponse(StreamController<List<int>>().stream, 200,
+              headers: {'content-type': 'text/event-stream'});
+        }
         final frames = [
           sse('token', {'text': '<think>The user wants the time.</think>'}),
           sse('tool', {'id': 1, 'name': 'current_time', 'args': {'city': 'Tokyo'}, 'status': 'running'}),
@@ -159,6 +175,28 @@ void main() {
     expect(find.text('hello'), findsWidgets); // sidebar title + user bubble
     expect(find.textContaining('How can I assist', findRichText: true), findsWidgets);
     expect(find.textContaining('30.0 tok/s'), findsOneWidget);
+    state.dispose();
+  });
+
+  test('a conversation that failed to load loads when opened again', () async {
+    final backend = FakeBackend(existing: true, messageFailures: 1);
+    final state = AppState(Api(Uri.parse('http://127.0.0.1:1'), client: backend.client));
+    await state.init();
+    expect(state.activeMessages, isEmpty);
+    await state.select('c0');
+    expect(state.activeMessages, hasLength(2));
+    state.dispose();
+  });
+
+  test('stop ends an answer the backend never finishes', () async {
+    final state = AppState(Api(Uri.parse('http://127.0.0.1:1'), client: FakeBackend(hang: true).client));
+    await state.init();
+    await state.send('hi', const []);
+    expect(state.isStreaming, isTrue);
+    state.stop();
+    await Future<void>.delayed(const Duration(milliseconds: 5200));
+    expect(state.isStreaming, isFalse);
+    expect(state.activeMessages.last.status, 'stopped');
     state.dispose();
   });
 }

@@ -237,10 +237,10 @@ def save_image(data_b64: str, conv_id: str, msg_id: str, idx: int) -> str:
     Re-encodes to JPEG at a bounded size (flattening any transparency onto
     white) so a large screenshot doesn't blow the context budget and the same
     file doubles as the reload thumbnail. Raises on undecodable input."""
-    from PIL import Image as PILImage
+    from PIL import Image as PILImage, ImageOps
 
     raw = _b64_to_bytes(data_b64 or "")
-    img = PILImage.open(io.BytesIO(raw))
+    img = ImageOps.exif_transpose(PILImage.open(io.BytesIO(raw)))  # phone photos: apply rotation
     if img.mode in ("RGBA", "LA", "P"):
         img = img.convert("RGBA")
         bg = PILImage.new("RGB", img.size, (255, 255, 255))

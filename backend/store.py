@@ -24,7 +24,6 @@ def init_db(path: str) -> None:
         _db_path = path
         with _conn() as c:
             c.execute("PRAGMA journal_mode=WAL")
-            c.execute("PRAGMA synchronous=NORMAL")
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -94,14 +93,14 @@ def _row_to_msg(r: sqlite3.Row) -> dict:
         except Exception:  # noqa: BLE001
             stats = None
     attachments: list[dict] = []
-    raw_att = r["attachments"] if "attachments" in r.keys() else None
+    raw_att = r["attachments"]
     if raw_att:
         try:
             attachments = json.loads(raw_att) or []
         except Exception:  # noqa: BLE001
             attachments = []
     tool_calls: list[dict] = []
-    raw_tools = r["tool_calls"] if "tool_calls" in r.keys() else None
+    raw_tools = r["tool_calls"]
     if raw_tools:
         try:
             tool_calls = json.loads(raw_tools) or []
@@ -115,7 +114,7 @@ def _row_to_msg(r: sqlite3.Row) -> dict:
         "stats": stats,
         "error": r["error"],
         # Full metadata incl. extracted `text` (used by prompt_from_store);
-        # MessageOut strips `text`/`data` before it reaches the UI.
+        # MessageOut strips `text`/`path` before it reaches the UI.
         "attachments": attachments,
         "tool_calls": tool_calls,
         "created_at": r["created_at"],
@@ -243,7 +242,7 @@ def update_message(
         params.append(status)
     if stats is not None:
         sets.append("stats=?")
-        params.append(json.dumps(stats))
+        params.append(json.dumps(stats) if stats else None)  # {} clears them
     if error is not None:
         sets.append("error=?")
         params.append(error)
@@ -256,20 +255,3 @@ def update_message(
     with _conn() as c:
         c.execute(f"UPDATE messages SET {', '.join(sets)} WHERE id=?", params)
 
-
-def delete_message(msg_id: str) -> None:
-    with _conn() as c:
-        c.execute("DELETE FROM messages WHERE id=?", (msg_id,))
-
-
-def delete_last_assistant(conv_id: str) -> str | None:
-    """Delete the trailing assistant message (for regenerate). Returns its id."""
-    with _conn() as c:
-        r = c.execute(
-            "SELECT id, role FROM messages WHERE conversation_id=? ORDER BY ord DESC LIMIT 1",
-            (conv_id,),
-        ).fetchone()
-        if r and r["role"] == "assistant":
-            c.execute("DELETE FROM messages WHERE id=?", (r["id"],))
-            return r["id"]
-        return None

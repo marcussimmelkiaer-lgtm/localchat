@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request, Response
 
 from .. import files, store
+from .chat import stop_generation
 from ..schemas import (
     ConversationDetail,
     ConversationOut,
@@ -45,6 +46,9 @@ def rename_conversation(conv_id: str, body: RenameConversation):
 
 @router.delete("/{conv_id}", status_code=204)
 def delete_conversation(conv_id: str, request: Request):
+    if not store.get_conversation(conv_id):
+        raise HTTPException(status_code=404, detail="conversation not found")
+    stop_generation(request.app, conv_id)
     store.delete_conversation(conv_id)
     try:
         files.cleanup_conversation_images(conv_id)

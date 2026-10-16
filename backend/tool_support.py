@@ -49,11 +49,14 @@ def tool(description: str, params: dict[str, str] | None = None):
 
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            bound = sig.bind_partial(*args, **kwargs)
+            try:
+                shown_args = dict(sig.bind_partial(*args, **kwargs).arguments)
+            except TypeError:  # e.g. a wrong argument name: fn() below reports it
+                shown_args = dict(kwargs)
             call = {
                 "id": next(_ids),
                 "name": fn.__name__,
-                "args": {k: v for k, v in bound.arguments.items()},
+                "args": shown_args,
                 "status": "running",
                 "result": "",
             }
@@ -82,13 +85,21 @@ def tool(description: str, params: dict[str, str] | None = None):
 
 def enabled_tools(switches: dict) -> list:
     """The tools switched on in config.toml's [tools] section."""
-    from .tools import TOOLS
+    names = [
+        name for name, on in (switches or {}).items()
+        if on is True or (isinstance(on, str) and on.strip().lower() in ("1", "true", "yes", "on"))
+    ]
+    if not names:
+        return []  # all off: a mistake in tools.py can't break the chat
+    try:
+        from .tools import TOOLS
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(f"backend/tools.py has an error: {e}") from e
 
     enabled = []
-    for name, on in (switches or {}).items():
+    for name in names:
         if name not in TOOLS:
             print(f"[tools] config.toml mentions unknown tool '{name}'; known: {', '.join(TOOLS)}")
             continue
-        if on is True or (isinstance(on, str) and on.strip().lower() in ("1", "true", "yes", "on")):
-            enabled.extend(TOOLS[name])
+        enabled.extend(TOOLS[name])
     return enabled

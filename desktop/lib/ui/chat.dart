@@ -460,7 +460,8 @@ class MarkdownText extends StatelessWidget {
       style: TextStyle(fontSize: fontSize, height: 1.65, color: C.ink),
       onLinkTap: (url, _) {
         final uri = Uri.tryParse(url);
-        if (uri != null) launchUrl(uri);
+        // Only web and mail links: model output must not open local files or apps.
+        if (uri != null && const ['http', 'https', 'mailto'].contains(uri.scheme)) launchUrl(uri);
       },
       styleSheet: GptMarkdownStyleSheet(
         codeBlock: CodeBlockStyle(

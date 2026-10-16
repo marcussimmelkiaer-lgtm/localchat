@@ -26,8 +26,15 @@ if [ "$(uname -s)" = "Darwin" ]; then
   # A Terminal running under Rosetta reports x86_64, which would make uv fetch
   # an Intel Python. Re-run natively instead.
   if [ "$(uname -m)" != "arm64" ]; then
-    exec arch -arm64 /bin/bash "$0" "$@"
+    exec arch -arm64 /bin/bash "$PWD/$(basename "$0")" "$@"  # $0 may be relative to the old cwd
   fi
+fi
+
+# Updating files under a running app breaks it.
+if pgrep -x LocalChat >/dev/null; then
+  echo "LocalChat is already running. Quit it first (Cmd+Q), then double-click"
+  echo "\"Start LocalChat.command\" again."
+  exit 1
 fi
 
 UV_DIR="$PWD/.uv"
@@ -67,7 +74,7 @@ fi
 
 # --- Git: hide the files created above from `git status` (local to this
 #     clone, so the repo needs no .gitignore). Added once.
-if [ -d .git/info ] && ! grep -qs "app/LocalChat.app/" .git/info/exclude; then
+if [ -d .git/info ] && ! grep -qs "!rag/employee_handbook.md" .git/info/exclude; then
   cat >> .git/info/exclude <<'EOF'
 # Added by the LocalChat launcher: files created on first run.
 .uv/
@@ -76,7 +83,10 @@ config.toml
 LocalChat data/
 app/LocalChat.app/
 *.gguf
+*.bak
 __pycache__/
+rag/*
+!rag/employee_handbook.md
 EOF
 fi
 
@@ -89,7 +99,8 @@ APP=app/LocalChat.app
 if [ -f app/LocalChat.zip ] && ! cmp -s app/version.txt "$APP/Contents/Resources/version.txt"; then
   echo "Unpacking the LocalChat app..."
   rm -rf "$APP"
-  ditto -x -k app/LocalChat.zip app || fail "Could not unpack the LocalChat app."
+  # On failure remove the half-unpacked app, so it doesn't look up to date next time.
+  ditto -x -k app/LocalChat.zip app || { rm -rf "$APP"; fail "Could not unpack the LocalChat app."; }
 fi
 # In the source repo (no app/), use the app built from desktop/.
 [ -d "$APP" ] || APP=desktop/build/macos/Build/Products/Release/LocalChat.app
