@@ -539,6 +539,38 @@ Prebuilt wheel `nobodywho-1.5.0-cp38-abi3-win_amd64.whl` (bundles llama.cpp + Vu
    `gh run download <green run> -n LocalChat-windows -D <dir>` (or `-macos`), then export with `--app-dir <dir>`.
    Not done yet: a real LocalChat app icon (still Flutter's), manual test on a real Mac.
 
+21. **Desktop app polish + fixes after the Flutter switch** (Oct 16 2026). All in both slim repos.
+   - **Title bar** (`desktop/lib/ui/title_bar.dart`): app-drawn, **white** (`C.ground`, no divider), taller.
+     Windows: native caption hidden via `window_manager` (`TitleBarStyle.hidden`), 44 px bar with drag
+     (double-click maximizes) + minimize/maximize/close (close = WM_CLOSE, so the backend still stops; red hover).
+     No snap-layout flyout on the maximize button. macOS: transparent title bar + empty unified `NSToolbar`
+     (52 pt, traffic lights centred) in `MainFlutterWindow.swift`; window background white. **Full screen**: the
+     toolbar showed as a grey strip, so it is removed on `willEnterFullScreen` and restored on
+     `willExitFullScreen` (NotificationCenter, because window_manager owns the window delegate); the Flutter bar
+     hides in full screen.
+   - **Branding**: logo = the "nobodywho" wordmark (`desktop/assets/logo-nobodywho.png`, also the React UI).
+     App icon (Windows `.ico`, macOS AppIcon set) + browser favicon (`frontend/public/favicon.png`) = lowercase
+     **"nw" cut from the wordmark's own glyphs** (the "y" and "w" are fused in the artwork; split at column 258),
+     black on a white rounded square, bigger letters at ≤64 px. Source letters are only ~44 px tall (upscaled with
+     alpha re-sharpening); a vector/large logo, or uppercase "NW" artwork, would improve it.
+   - **Model sometimes never loaded on macOS** ("Preparing model…"): the app requested `/api/models`
+     (nobodywho `get_cached_models`) while the startup load ran (nobodywho `Model()`, holds the GIL) — a likely
+     native deadlock (not reproducible on the fast Windows GPU). Fixes: the app fetches the model list only after
+     the model has loaded; the backend takes `engine.native_lock` (= `_model_lock`) around model-cache listing so
+     it never overlaps a load; the app re-POSTs `/api/warmup` every 5 s while nothing is loaded/loading and no
+     error; the backend logs `[llm] loading model…` / `model loaded in Ns` / `model load failed`. The CI smoke test
+     (`--running`) no longer calls `/api/warmup` itself — the app must load the model on its own.
+   - **Random "Cannot reach the local server"**: uvicorn's 5 s keep-alive equalled the app's 5 s health poll, so
+     polls hit connections being closed (reproduced 10/18). Fixes: `timeout_keep_alive=120`; the app retries a GET
+     once on `ClientException`; "server down" only after 3 consecutive failed checks (~2 s).
+   - **Local Windows builds now work**: Developer Mode is ON on this machine, so `flutter build windows` (~50 s)
+     builds + tests Windows changes locally; macOS builds still need CI (or a Mac).
+   - **Users update with `git pull`** in their LocalChat folder (then restart via the launcher, which unpacks the
+     new `app/LocalChat.zip` when `app/version.txt` changed). Close LocalChat first, or the unpack can't replace
+     the running app's files.
+   - Open: the new app has not yet been tested by hand on a real Mac beyond the colleague's reports; the
+     PyInstaller installer path in `packaging/` still references pywebview (stale).
+
 ## Token throughput theory (asked but NOT implemented — for future reference)
 
 Single-user decode is **memory-bandwidth bound at batch 1**, not compute bound: each token streams the
